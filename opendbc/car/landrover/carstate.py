@@ -1,25 +1,25 @@
 import math
-from collections import deque
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.can import CANDefine
 from opendbc.can.parser import CANParser
 from opendbc.car import Bus, structs, create_button_events
 from opendbc.car.interfaces import CarStateBase
-from opendbc.car.landrover.values import DBC, Buttons, CanBus, CarControllerParams, LandroverFlags
-from opendbc.sunnypilot.car.ford.mads import MadsCarState
+from opendbc.car.landrover.values import DBC, CanBus, CarControllerParams, LandroverFlags
+from opendbc.sunnypilot.car.landrover.mads import MadsCarState
 
 ButtonType = structs.CarState.ButtonEvent.Type
 
-class CarState(CarStateBase):
-  def __init__(self, CP):
+
+class CarState(CarStateBase, MadsCarState):
+  def __init__(self, CP, CP_SP):
     CarStateBase.__init__(self, CP, CP_SP)
     MadsCarState.__init__(self, CP, CP_SP)
-    self.can_define = CANDefine(DBC[CP.carFingerprint]["pt"])
+    can_define = CANDefine(DBC[CP.carFingerprint]["pt"])
 
     if CP.flags & LandroverFlags.FLEXRAY_HARNESS:
-      self.shifter_values = self.can_define.dv["GearPRND"]["PRND"]
+      self.shifter_values = can_define.dv["GearPRND"]["PRND"]
     else:
-      self.shifter_values = self.can_define.dv["GEAR_PRND"]["GEAR_SHIFT"]
+      self.shifter_values = can_define.dv["GEAR_PRND"]["GEAR_SHIFT"]
 
     self.is_metric = True
     self.params = CarControllerParams(CP)
@@ -27,13 +27,14 @@ class CarState(CarStateBase):
 
     self.lc_button = 0
 
-  def update(self, can_parsers) -> structs.CarState:
+  def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     if self.CP.flags & LandroverFlags.FLEXRAY_HARNESS:
       return self.update_can_defender(can_parsers)
 
     cp = can_parsers[Bus.pt]
 
     ret = structs.CarState()
+    ret_sp = structs.CarStateSP()
 
     self.is_metric = True
 
@@ -65,7 +66,6 @@ class CarState(CarStateBase):
 
     ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, cp.vl["TURN_SIGNAL"]['LEFT_BLINK'],cp.vl["TURN_SIGNAL"]['RIGHT_BLINK'])
 
-
     gear = cp.vl["GEAR_PRND"]["GEAR_SHIFT"]
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
 
@@ -75,7 +75,6 @@ class CarState(CarStateBase):
     gas = (cp.vl["ACCELATOR_DRIVER"]["ACCELATOR_DRIVER"])
     ret.gasPressed = gas >= 1
 
-
     if self.CP.enableBsm:
       ret.leftBlindspot  = cp.vl["LEFT_ALERT"]["LEFT_ALERT_1"] != 0
       ret.rightBlindspot = cp.vl["RIGHT_ALERT"]["RIGHT_ALERT_1"] != 0
@@ -83,33 +82,31 @@ class CarState(CarStateBase):
       ret.leftBlindspot = False
       ret.rightBlindspot = False
 
-
     ret.stockAeb = False
 
     ret.blockPcmEnable = False
 
     ret.cruiseState.available = cp.vl["CRUISE_CONTROL"]["CRUISE_ON"] == 1
-    ret.cruiseState.enabled =  cp.vl["CRUISE_CONTROL"]["CRUISE_ON"] == 1
+    ret.cruiseState.enabled = cp.vl["CRUISE_CONTROL"]["CRUISE_ON"] == 1
     ret.cruiseState.speed = ret.vEgoRaw
     ret.cruiseState.standstill = False
 
-    return ret
+    return ret, ret_sp
 
-
-  def update_can_defender(self, can_parsers) -> structs.CarState:
+  def update_can_defender(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
 
     ret = structs.CarState()
+    ret_sp = structs.CarStateSP()
 
     self.is_metric = True
-    speed_factor = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
+    #speed_factor = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
 
     ret.seatbeltUnlatched = (cp.vl["SeatBelt"]["SeatBelt_Driver"]  == 0)
-    ret.doorOpen = not any([cp.vl["DoorStatus"]["FrontLeftDoor"], \
-         cp.vl["DoorStatus"]["FrontRightDoor"], \
-         cp.vl["DoorStatus"]["RearLeftDoor"], \
+    ret.doorOpen = not any([cp.vl["DoorStatus"]["FrontLeftDoor"],
+         cp.vl["DoorStatus"]["FrontRightDoor"],
+         cp.vl["DoorStatus"]["RearLeftDoor"],
          cp.vl["DoorStatus"]["RearRightDoor"]])
-
 
     self.parse_wheel_speeds(ret,
       cp.vl["WheelSpeedFront"]["SpeedLeft"],
@@ -135,7 +132,6 @@ class CarState(CarStateBase):
 
     ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, cp.vl["HandleSignal"]['TurnLeft'],cp.vl["HandleSignal"]['TurnRight'])
 
-
     gear = cp.vl["GearPRND"]["PRND"]
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
 
@@ -143,15 +139,14 @@ class CarState(CarStateBase):
     ret.brakePressed = cp.vl["StopAndGo"]["BrakeDriver"] == 1
     ret.gasPressed = cp.vl["GasPedal_ON"]["GasPedalDriver"] == 1
 
-
     if self.CP.enableBsm:
-      ret.leftBlindspot  = cp.vl["BlindSpot"]["LeftBS"] == 4
+      ret.leftBlindspot = cp.vl["BlindSpot"]["LeftBS"] == 4
       ret.rightBlindspot = cp.vl["BlindSpot"]["RightBS"] == 4
 
     ret.stockAeb = False
 
     ret.cruiseState.available = cp.vl["CruiseInfo"]["CruiseOn"] == 1
-    ret.cruiseState.enabled =  cp.vl["CruiseInfo"]["CruiseOn"] == 1
+    ret.cruiseState.enabled = cp.vl["CruiseInfo"]["CruiseOn"] == 1
     ret.cruiseState.speed = ret.vEgoRaw * (CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS)
     ret.cruiseState.nonAdaptive = False
     ret.cruiseState.standstill = False
@@ -162,24 +157,21 @@ class CarState(CarStateBase):
     MadsCarState.update_mads(self, ret, can_parsers)
 
     ret.buttonEvents = [
-      *create_button_events(self.lc_button, prev_lc_buttons, {1: ButtonType.lkas}),
+      *create_button_events(self.lc_button, prev_lc_button, {1: ButtonType.lkas}),
     ]
 
     return ret, ret_sp
-
-  @staticmethod
-  def get_can_parsers(self, CP):
-    if self.CP.flags & LandroverFlags.FLEXRAY_HARNESS:
-      return self.get_can_parser_defender(CP)
-
-    return {
-      Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus.UNDERBODY),
-
-      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus.CAM)
-    }
 
   def get_can_parser_defender(self, CP):
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus.UNDERBODY),
     }
 
+  def get_can_parsers(self, CP, CP_SP):
+    if CP.flags & LandroverFlags.FLEXRAY_HARNESS:
+      return self.get_can_parser_defender(CP)
+
+    return {
+      Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus.UNDERBODY),
+      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus.CAM)
+    }

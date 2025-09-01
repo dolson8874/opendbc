@@ -2,8 +2,8 @@ from opendbc.car import get_safety_config, structs
 from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.landrover.carcontroller import CarController
 from opendbc.car.landrover.carstate import CarState
-from opendbc.car.landrover.values import CAR, Buttons
-from opendbc.car.interfaces import CarInterfaceBase
+from opendbc.car.landrover.values import CAR
+
 
 class CarInterface(CarInterfaceBase):
   CarState = CarState

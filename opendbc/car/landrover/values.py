@@ -5,10 +5,11 @@ from opendbc.car.lateral import AngleSteeringLimits
 from opendbc.car.structs import CarParams
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.docs_definitions import CarFootnote, CarHarness, CarDocs, CarParts, Column
-from opendbc.car.fw_query_definitions import FwQueryConfig , Request, StdQueries
+from opendbc.car.fw_query_definitions import FwQueryConfig, Request, StdQueries
 from opendbc.car.vin import Vin
 
 Ecu = CarParams.Ecu
+
 
 class Buttons:
   NONE = 0
@@ -53,6 +54,7 @@ class CarControllerParams:
       self.STEER_THRESHOLD = 150
       self.STEER_STEP = 4  # 25 Hz
 
+
 class CanBus:
   UNDERBODY = 0
   CAN2FLEXRAY = 1
@@ -63,13 +65,13 @@ class LandroverFlags(IntFlag):
   FLEXRAY_HARNESS = 1
 
 
-
 class Footnote(Enum):
   FLEXRAY = CarFootnote(
     "Requires a " +
     "<a href=\"https://blog.comma.ai/hacking-an-audi-performing-a-man-in-the-middle-attack-on-flexray/\" target=\"_blank\">FlexRay Car Harness</a> " +
     "flexray <a href=\"https://en.wikipedia.org/wiki/FlexRay\" target=\"_blank\">FexRay car</a>.",
     Column.MODEL)
+
 
 @dataclass
 class LandroverCarDocs(CarDocs):
@@ -79,7 +81,6 @@ class LandroverCarDocs(CarDocs):
   def init_make(self, CP: CarParams):
     if CP.flags & LandroverFlags.FLEXRAY_HARNESS:
       self.footnotes.insert(0, Footnote.FLEXRAY)
-
 
 
 """
@@ -107,6 +108,7 @@ class LandroverCarDocs(CarDocs):
  11~16  : Serial Number
 """
 
+
 class WMI(StrEnum):
   LANDROVER = "SAL"
 
@@ -121,18 +123,20 @@ class ModelYear(StrEnum):
   L_2020 = "L"
   P_2023 = "P"
 
+
 @dataclass
 class LandroverPlatformConfig(PlatformConfig):
   dbc_dict: DbcDict = field(default_factory=lambda: {
-    Bus.pt: "landrover_rangerover_2017" })
+    Bus.pt: "landrover_rangerover_2017"})
   wmis: set[WMI] = field(default_factory=set)
   lines: set[ModelLine] = field(default_factory=set)
   years: set[ModelYear] = field(default_factory=set)
 
+
 @dataclass
 class LandroverFlexrayPlatformConfig(PlatformConfig):
   dbc_dict: DbcDict = field(default_factory=lambda: {
-    Bus.pt: "landrover_defender_2023" })
+    Bus.pt: "landrover_defender_2023"})
   wmis: set[WMI] = field(default_factory=set)
   lines: set[ModelLine] = field(default_factory=set)
   years: set[ModelYear] = field(default_factory=set)

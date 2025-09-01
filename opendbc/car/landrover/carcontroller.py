@@ -7,7 +7,6 @@ from opendbc.car.landrover.landrovercan import create_lkas_command_defender, cre
 from opendbc.car.landrover.values import CarControllerParams, LandroverFlags, STATIC_MSGS
 
 
-
 def process_hud_alert_rr(enabled, active, leftBs, rightBs, hud_control, counter):
   #sys_warning = (hud_control.visualAlert in (VisualAlert.steerRequired, VisualAlert.ldw))
   sys_warning =0
@@ -40,9 +39,7 @@ def process_hud_alert_rr(enabled, active, leftBs, rightBs, hud_control, counter)
   if rightBs:
     right_lane_warning = 2
 
-
   return sys_warning, sys_state, left_lane_warning, right_lane_warning
-
 
 
 def process_hud(enabled, active, leftBs, rightBs, hud_control):
@@ -76,11 +73,9 @@ def process_hud(enabled, active, leftBs, rightBs, hud_control):
   return left_lane_warning, right_lane_warning
 
 
-
-
 class CarController(CarControllerBase):
-  def __init__(self, dbc_names, CP):
-    super().__init__(dbc_names, CP)
+  def __init__(self, dbc_names, CP, CP_SP):
+    super().__init__(dbc_names, CP, CP_SP)
 
     self.params = CarControllerParams(CP)
     self.apply_torque_last = 0
@@ -90,7 +85,7 @@ class CarController(CarControllerBase):
     self.lkascnt = 0
     self.lrflag = 0
 
-  def update(self, CC, CS, now_nanos):
+  def update(self, CC, CC_SP, CS, now_nanos):
     actuators = CC.actuators
     hud_control = CC.hudControl
 
@@ -111,7 +106,7 @@ class CarController(CarControllerBase):
         apply_torque = 0
         self.apply_torque_last = 0
 
-      for (addr, bus, fr_step, vl) in STATIC_MSGS:
+      for (addr, bus, _fr_step, vl) in STATIC_MSGS:
          if (self.frame % 2 == 0):  # 50Hz
            can_sends.append(CanData(addr, vl, bus))
 
@@ -127,7 +122,9 @@ class CarController(CarControllerBase):
 
       # LaneInfo
       if (self.frame % 8 == 0):  # 8hz
-        sys_warning, sys_state, left_lane, right_lane = process_hud_alert_rr(CC.enabled, CC.latActive, CS.out.leftBlindspot, CS.out.rightBlindspot, hud_control, self.frame)
+        sys_warning, sys_state, left_lane, right_lane = process_hud_alert_rr(
+          CC.enabled, CC.latActive, CS.out.leftBlindspot, CS.out.rightBlindspot, hud_control, self.frame
+          )
 
         if left_lane == 2 and right_lane == 2:
           if self.lrflag ==0:
@@ -175,13 +172,10 @@ class CarController(CarControllerBase):
             self.frame % 255,
             left_lane, right_lane))
 
-
-
     new_actuators = actuators.as_builder()
     new_actuators.steeringAngleDeg = self.apply_angle_last
     new_actuators.torque = apply_torque / self.params.STEER_MAX
     new_actuators.torqueOutputCan = apply_torque
-
 
     self.frame += 1
 

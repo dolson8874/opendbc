@@ -2208,13 +2208,13 @@ _torque_table_dir4 = [
 
 def find_steer_torque(counter, torque):
 
-   if torque <= 0 :
-        ctorque = abs(torque)
-        crc = _torque_table_dir4[int(counter)][ctorque]
-        ntorque =  ctorque + 1024
+   if torque <= 0:
+     ctorque = abs(torque)
+     crc = _torque_table_dir4[int(counter)][ctorque]
+     ntorque = ctorque + 1024
    else:
-        ctorque = torque - 1
-        crc = _torque_table_dir3[int(counter)][ctorque]
-        ntorque = 1024 - torque
+     ctorque = torque - 1
+     crc = _torque_table_dir3[int(counter)][ctorque]
+     ntorque = 1024 - torque
 
-   return  [ ntorque, crc ]
+   return [ntorque, crc]
