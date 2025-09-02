@@ -26,18 +26,10 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
 
       // Vehicle speed (info02)
       if (msg->addr == 0x11U) {
-        // Vehicle speed: (val * 0.01) / MS_TO_KPH
-        uint8_t raw_high = (uint8_t)msg->data[4];
-        uint8_t high_byte = raw_high & 0x7FU;
-        uint8_t low_byte = (uint8_t)msg->data[5];
-
-        float high = (float)high_byte;
-        float low = (float)low_byte;
-
-        float speed = (((high * 256.0f) + low) * 0.01f) / 3.6f;
+        int speed = (msg->data[4] << 8) | msg->data[5];
 
         vehicle_moving = speed > 0.0;
-        UPDATE_VEHICLE_SPEED(speed);
+        UPDATE_VEHICLE_SPEED(speed * 0.01 * KPH_TO_MS);
       }
 
       // Gas pressed
@@ -51,8 +43,8 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
       }
 
       // Cruise state
-      if (msg->addr == 0x1U) {
-        pcm_cruise_check((GET_BIT(msg, 54U) == 1));
+      if (msg->addr == 258U) {
+        pcm_cruise_check((GET_BIT(msg, 34U) == 1));
       }
     }
 
@@ -67,8 +59,8 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
   bool tx = true;
 
   const AngleSteeringLimits LANDROVER_STEERING_LIMITS = {
-    .max_angle = 1171,  // 90 deg, but LKAS about 30 deg
-    .angle_deg_to_can = 13.009,
+    .max_angle = 1184,  // angle * deg_to_can
+    .angle_deg_to_can = 13.157, //  1/factor, 1/0.076
     .angle_rate_up_lookup = {
       {0., 5., 25.},
       {2.5, 1.5, 0.2}
@@ -94,13 +86,13 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
     if (msg->bus == 1U) {
 
       // Steering control 
-      // (0.07783 * val) - 729.63 in deg.
+      // (0.076 * val) - 684 in deg.
+      // deg_to_can = 1/0.076 , max_angle = angle * deg_to_can
       if (msg->addr == 0x1F0U) {
-        // We use 1/12.8485 deg as a unit here
         unsigned int raw_angle_can = ((msg->data[3] & 0x3FU) << 8) | msg->data[4];
         int desired_angle = (int)raw_angle_can - 9000;
 
-        bool steer_control_enabled = (msg->data[3] >> 7) & 1U;
+        bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
 
         if (steer_angle_cmd_checks(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS)) {
           tx = false;
@@ -166,7 +158,7 @@ static safety_config landrover_init(uint16_t param) {
     {.msg = {{0x2e, 0, 4, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // SWM_Torque (driver torque)
     {.msg = {{0x189, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // GasPedal (gas pedal)
     {.msg = {{0x84, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // StopAndGo (brakes)
-    {.msg = {{0x1, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},     // CruiseInfo (cruise state)
+    {.msg = {{258, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},     // CruiseInfo (cruise state)
     {.msg = {{0x1BE, 2, 8, 13U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // CAM msg
   };
 

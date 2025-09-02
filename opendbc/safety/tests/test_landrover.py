@@ -17,7 +17,8 @@ class TestLandroverSafety(common.PandaCarSafetyTest, common.AngleSteeringSafetyT
 
   # Angle control limits
   STEER_ANGLE_MAX = 90 # deg
-  DEG_TO_CAN  = 13.009
+  STEER_ANGLE_TEST_MAX = 90
+  DEG_TO_CAN  = 13.157
 
   ANGLE_RATE_BP = [0., 5., 25.]
   ANGLE_RATE_UP = [2.5, 1.5, 0.2]  # windup limit
@@ -33,7 +34,7 @@ class TestLandroverSafety(common.PandaCarSafetyTest, common.AngleSteeringSafetyT
   def setUp(self):
     self.packer = CANPackerPanda("landrover_defender_2023")
     self.safety = libsafety_py.libsafety
-    self.safety.set_safety_hooks(CarParams.SafetyModel.landrover, 0)
+    self.safety.set_safety_hooks(CarParams.SafetyModel.landrover, 1)
     self.safety.init_tests()
 
   def _angle_cmd_msg(self, angle: float, enabled: bool):
