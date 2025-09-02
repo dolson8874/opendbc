@@ -5,6 +5,7 @@ from opendbc.car.ford.values import CAR as FORD
 from opendbc.car.gm.values import CAR as GM
 from opendbc.car.honda.values import CAR as HONDA
 from opendbc.car.hyundai.values import CAR as HYUNDAI
+from opendbc.car.landrover.values import CAR as LANDROVER
 from opendbc.car.mazda.values import CAR as MAZDA
 from opendbc.car.mock.values import CAR as MOCK
 from opendbc.car.nissan.values import CAR as NISSAN
@@ -242,6 +243,8 @@ MIGRATION = {
   "GENESIS G80 2017": HYUNDAI.GENESIS_G80,
   "GENESIS G90 2017": HYUNDAI.GENESIS_G90,
   "GENESIS GV80 2023": HYUNDAI.GENESIS_GV80,
+  "DEFENDER 2023": LANDROVER.LANDROVER_DEFENDER_2023,
+  "RANGE ROVER 2017 VOGUE": LANDROVER.RANGEROVER_VOGUE_2017,
   "MAZDA CX-5": MAZDA.MAZDA_CX5,
   "MAZDA CX-9": MAZDA.MAZDA_CX9,
   "MAZDA 3": MAZDA.MAZDA_3,
