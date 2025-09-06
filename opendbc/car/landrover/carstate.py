@@ -100,7 +100,7 @@ class CarState(CarStateBase, MadsCarState):
     ret_sp = structs.CarStateSP()
 
     self.is_metric = True
-    #speed_factor = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
+    speed_factor = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
 
     ret.seatbeltUnlatched = (cp.vl["SeatBelt"]["SeatBelt_Driver"]  == 0)
     ret.doorOpen = not any([cp.vl["DoorStatus"]["FrontLeftDoor"],
@@ -145,14 +145,14 @@ class CarState(CarStateBase, MadsCarState):
 
     ret.stockAeb = False
 
-    ret.cruiseState.available = cp.vl["CruiseInfo"]["CruiseOn"] == 1
     ret.cruiseState.enabled = cp.vl["CruiseInfo"]["CruiseOn"] == 1
-    ret.cruiseState.speed = ret.vEgoRaw * (CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS)
+    ret.cruiseState.speed = ret.vEgoRaw
     ret.cruiseState.nonAdaptive = False
     ret.cruiseState.standstill = False
 
     prev_lc_button = self.lc_button
     self.lc_button = bool(cp.vl["LKAS_BTN"]["LKAS_Btn_on"])
+    ret.cruiseState.available = self.lc_button
 
     MadsCarState.update_mads(self, ret, can_parsers)
 

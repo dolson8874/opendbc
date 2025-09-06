@@ -5,6 +5,7 @@ from opendbc.car.lateral import apply_std_steer_angle_limits, apply_driver_steer
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.landrover.landrovercan import create_lkas_command_defender, create_hud_command_defender, create_lkas_command, create_lkas_hud
 from opendbc.car.landrover.values import CarControllerParams, LandroverFlags, STATIC_MSGS
+from opendbc.sunnypilot.car.landrover.mads import MadsCarController
 
 
 def process_hud_alert_rr(enabled, active, leftBs, rightBs, hud_control, counter):
@@ -73,9 +74,10 @@ def process_hud(enabled, active, leftBs, rightBs, hud_control):
   return left_lane_warning, right_lane_warning
 
 
-class CarController(CarControllerBase):
+class CarController(CarControllerBase, MadsCarController):
   def __init__(self, dbc_names, CP, CP_SP):
-    super().__init__(dbc_names, CP, CP_SP)
+    CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
+    MadsCarController.__init__(self)
 
     self.params = CarControllerParams(CP)
     self.apply_torque_last = 0
@@ -84,10 +86,17 @@ class CarController(CarControllerBase):
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.lkascnt = 0
     self.lrflag = 0
+    self.main_on_last = False
 
   def update(self, CC, CC_SP, CS, now_nanos):
+    MadsCarController.update(self, CC, CC_SP, CS)
     actuators = CC.actuators
     hud_control = CC.hudControl
+
+    if self.mads.enable_mads:
+      main_on = self.mads.paused or CC.latActive
+    else:
+      main_on = CS.out.cruiseState.available
 
     # Steering Torque
     new_torque = int(round(actuators.torque * self.params.STEER_MAX))
@@ -123,7 +132,7 @@ class CarController(CarControllerBase):
       # LaneInfo
       if (self.frame % 8 == 0):  # 8hz
         sys_warning, sys_state, left_lane, right_lane = process_hud_alert_rr(
-          CC.enabled, CC.latActive, CS.out.leftBlindspot, CS.out.rightBlindspot, hud_control, self.frame
+          main_on, CC.latActive, CS.out.leftBlindspot, CS.out.rightBlindspot, hud_control, self.frame
           )
 
         if left_lane == 2 and right_lane == 2:
@@ -155,7 +164,7 @@ class CarController(CarControllerBase):
         can_sends.append(
           create_lkas_command_defender(
              self.packer,
-             CC.enabled, CC.latActive,
+             main_on, CC.latActive,
              self.apply_angle_last,
              self.lkascnt,
              ))
@@ -163,12 +172,12 @@ class CarController(CarControllerBase):
 
       if self.frame % 4 == 0:
         # HUD control
-        left_lane, right_lane = process_hud(CC.enabled, CC.latActive, CS.out.leftBlindspot, CS.out.rightBlindspot, hud_control)
+        left_lane, right_lane = process_hud(main_on, CC.latActive, CS.out.leftBlindspot, CS.out.rightBlindspot, hud_control)
         # HUD msg
         can_sends.append(
             create_hud_command_defender(
             self.packer,
-            CC.enabled, CC.latActive,
+            main_on, CC.latActive,
             self.frame % 255,
             left_lane, right_lane))
 

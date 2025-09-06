@@ -2,7 +2,7 @@
 
 #include "opendbc/safety/safety_declarations.h"
 
-static bool landrover_flexray_harness = false;
+static bool landrover_flexray_harness = true;
 
 static void landrover_rx_hook(const CANPacket_t *msg) {
   if (landrover_flexray_harness) {
@@ -46,6 +46,12 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
       if (msg->addr == 258U) {
         pcm_cruise_check((GET_BIT(msg, 34U) == 1));
       }
+
+      // lkas btn
+      if (msg->addr == 0x24U) {
+        mads_button_press = GET_BIT(msg, 61U) ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
+    }
+
     }
 
   } else {
@@ -107,33 +113,17 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 }
 
 
-static bool landrover_fwd_hook(int bus, int addr) {
-  bool block_msg = false;
-
-  UNUSED(bus);
-  UNUSED(addr);
-
-  if (landrover_flexray_harness) {
-  // Change data in flexray car harness
-  // LKAS cmd 0x1F0, 0x1F1  50hz
-  // Lane Info HUD 0x3101   25hz
-  } else {
-
-
-  }
-
-  return block_msg;
-}
-
 static safety_config landrover_init(uint16_t param) {
   const int LANDROVER_PARAM_FLEXRAY_HARNESS = 1;
 
+#ifdef _RR_2017_
   // CAN messages for RANGE ROVER 2017 camera
   static const CanMsg LANDROVER_TX_MSGS[] = {
      {0x28F, 0, 8, .check_relay = true},
      {0x3D4, 0, 8, .check_relay = true},
      {0x1D8, 0, 8, .check_relay = true},
   };
+#endif
 
   // CAN messages for OP to Flexray board
   // 0x1F0 = LkasCmd, 0x1F1 = ACC
@@ -143,27 +133,25 @@ static safety_config landrover_init(uint16_t param) {
      {0x1BE, 0, 8, .check_relay = true, .disable_static_blocking = true}, // check for relay
   };
 
+#ifdef _RR_2017_
   static RxCheck landrover_rr_rx_checks[] = {
-    //{.msg = {{0xf2, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // EPS_01 (STEER_ANGLE01)
-   //{.msg = {{0x1CB, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // SPEED_02  SPEED02
-    //{.msg = {{0x158, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // ACCELATOR_DRIVER (ACCELATOR_DRIVER)
-    //{.msg = {{0x156, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // CRUISE_CONTROL (DRIVER_BRAKE, CRUISE_ON)
+    {.msg = {{0xf2, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // EPS_01 (STEER_ANGLE01)
+   {.msg = {{0x1CB, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // SPEED_02  SPEED02
+    {.msg = {{0x158, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // ACCELATOR_DRIVER (ACCELATOR_DRIVER)
+    {.msg = {{0x156, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // CRUISE_CONTROL (DRIVER_BRAKE, CRUISE_ON)
     {.msg = {{0x28F, 2, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // CAM msg LKAS_RUN
   };
+#endif
 
   static RxCheck landrover_flexray_rx_checks[] = {
-    {.msg = {{0x56, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // SWM_Angle (steer angle)
+    {.msg = {{0x24, 0, 8, 15U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // LKAS_btn 
     {.msg = {{0x32, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // PSCM_Out (angleTorque)
     {.msg = {{0x11, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // Speed Info02 
-    {.msg = {{0x2e, 0, 4, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // SWM_Torque (driver torque)
     {.msg = {{0x189, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // GasPedal (gas pedal)
     {.msg = {{0x84, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // StopAndGo (brakes)
     {.msg = {{258, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},     // CruiseInfo (cruise state)
-    {.msg = {{0x1BE, 2, 8, 13U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // CAM msg
   };
 
-  UNUSED(landrover_rr_rx_checks);
-  UNUSED(LANDROVER_TX_MSGS);
 
   landrover_flexray_harness = GET_FLAG(param, LANDROVER_PARAM_FLEXRAY_HARNESS);
 
@@ -181,5 +169,4 @@ const safety_hooks landrover_hooks = {
   .init = landrover_init,
   .rx = landrover_rx_hook,
   .tx = landrover_tx_hook,
-  .fwd = landrover_fwd_hook,
 };

@@ -22,7 +22,6 @@ class CarInterface(CarInterfaceBase):
     if alpha_long:
       ret.openpilotLongitudinalControl = True
 
-    ret.minSteerSpeed = 0.
     ret.steerControlType = structs.CarParams.SteerControlType.torque
 
     if ret.centerToFront == 0:
@@ -36,8 +35,16 @@ class CarInterface(CarInterfaceBase):
     elif candidate in (CAR.LANDROVER_DEFENDER_2023):
       ret.steerControlType = structs.CarParams.SteerControlType.angle
       ret.enableBsm = True
-      ret.minSteerSpeed = 50.
 
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.landrover, ret.flags)]
+
+    return ret
+
+  @staticmethod
+  def _get_params_sp(stock_cp: structs.CarParams, ret: structs.CarParamsSP, candidate, fingerprint: dict[int, dict[int, int]],
+                     car_fw: list[structs.CarParams.CarFw], alpha_long: bool, docs: bool) -> structs.CarParamsSP:
+
+    stock_cp.enableBsm = True
+    stock_cp.radarUnavailable = False
 
     return ret

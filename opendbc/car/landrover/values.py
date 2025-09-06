@@ -201,6 +201,7 @@ STATIC_MSGS = [
 
 
 FLEXRAY_CAR = CAR.with_flags(LandroverFlags.FLEXRAY_HARNESS)
+EVA2_CARS = {CAR.LANDROVER_DEFENDER_2023, }
 
 DBC = CAR.create_dbc_map()
 
