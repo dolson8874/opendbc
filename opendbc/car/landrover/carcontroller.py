@@ -49,21 +49,18 @@ def process_hud(enabled, active, leftBs, rightBs, hud_control):
   right_lane_warning = 0
 
   if enabled:
-    if hud_control.leftLaneVisible:
-      left_lane_warning = 1
-    else:
-      left_lane_warning = 3
+    left_lane_warning = 3
+    right_lane_warning = 3
 
-    if hud_control.rightLaneVisible:
+    if active:
+      left_lane_warning = 1
       right_lane_warning = 1
-    else:
-      right_lane_warning = 3
 
     if hud_control.leftLaneDepart:
-      left_lane_warning = 0
+      left_lane_warning = 3
 
     if hud_control.rightLaneDepart:
-      right_lane_warning = 0
+      right_lane_warning = 3
 
   if leftBs:
     left_lane_warning = 4 + 2
