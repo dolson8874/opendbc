@@ -2,27 +2,33 @@
 
 #include "opendbc/safety/safety_declarations.h"
 
+#define FLEXRAY_MAX_ANGLE   1170  // angle * deg_to_can
+#define FLEXRAY_DEG_TO_CAN 13.009 //  1/factor, 1/0.07687
+
 static bool landrover_flexray_harness = true;
 
 static void landrover_rx_hook(const CANPacket_t *msg) {
   if (landrover_flexray_harness) {
     if (msg->bus == 0U)  {
-      /**
+      #if 1
       // Steering angle: (0.1 * val) - 780 in deg.
-      if (addr == 0x56) {
+      if (msg->addr == 0x56) {
         // Store it 1/10 deg to match steering request
-        int angle_meas_new = (((GET_BYTE(to_push, 3) & 0x3FU) << 8) | GET_BYTE(to_push, 4)) - 7800U;
+        int angle_raw = (((msg->data[3] & 0x3FU) << 8) | msg->data[4]);
+
+        int angle_meas_new = (angle_raw - 7800U ) * 0.1 * FLEXRAY_DEG_TO_CAN;
         update_sample(&angle_meas, angle_meas_new);
       }
-      **/
+      #else
 
-      // PSCM_Out Steering angleTorque: (0.07687 * val) - 691.89 in deg.
+      // PSCM_Out Steering angleTorque: (0.07687 * val) - 691.83 in deg.
       if (msg->addr == 0x32U) {
         // Store it 1/10 deg to match steering request
         unsigned int raw_val = (((msg->data[2] & 0x3FU) << 8) | msg->data[3]);
         int angle_meas_new = (int)raw_val - 9000;
         update_sample(&angle_meas, angle_meas_new);
       }
+      #endif
 
       // Vehicle speed (info02)
       if (msg->addr == 0x11U) {
@@ -65,8 +71,9 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
   bool tx = true;
 
   const AngleSteeringLimits LANDROVER_STEERING_LIMITS = {
-    .max_angle = 1184,  // angle * deg_to_can
-    .angle_deg_to_can = 13.157, //  1/factor, 1/0.076
+    .max_angle = FLEXRAY_MAX_ANGLE,  // angle * deg_to_can
+    .angle_deg_to_can = FLEXRAY_DEG_TO_CAN, //  1/factor, 1/0.076
+    .frequency = 50U,
     .angle_rate_up_lookup = {
       {0., 5., 25.},
       {2.5, 1.5, 0.2}
@@ -92,13 +99,14 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
     if (msg->bus == 1U) {
 
       // Steering control 
-      // (0.076 * val) - 684 in deg.
-      // deg_to_can = 1/0.076 , max_angle = angle * deg_to_can
+      // (0.07687 * val) - 691.83 in deg.
+      // deg_to_can = 1/0.07687 , max_angle = angle * deg_to_can
       if (msg->addr == 0x1F0U) {
         unsigned int raw_angle_can = ((msg->data[3] & 0x3FU) << 8) | msg->data[4];
         int desired_angle = (int)raw_angle_can - 9000;
 
-        bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
+        //bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
+        bool steer_control_enabled = GET_BIT(msg, 55U) == 1;
 
         if (steer_angle_cmd_checks(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS)) {
           tx = false;
@@ -145,7 +153,8 @@ static safety_config landrover_init(uint16_t param) {
 
   static RxCheck landrover_flexray_rx_checks[] = {
     {.msg = {{0x24, 0, 8, 15U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // LKAS_btn 
-    {.msg = {{0x32, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // PSCM_Out (angleTorque)
+    {.msg = {{0x56, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // PSCM_Out (angleTorque)
+    //{.msg = {{0x32, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // PSCM_Out (angleTorque)
     {.msg = {{0x11, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // Speed Info02 
     {.msg = {{0x189, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // GasPedal (gas pedal)
     {.msg = {{0x84, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // StopAndGo (brakes)

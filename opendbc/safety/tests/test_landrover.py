@@ -18,7 +18,7 @@ class TestLandroverSafety(common.PandaCarSafetyTest, common.AngleSteeringSafetyT
   # Angle control limits
   STEER_ANGLE_MAX = 90 # deg
   STEER_ANGLE_TEST_MAX = 90
-  DEG_TO_CAN  = 13.157
+  DEG_TO_CAN  = 13.009
 
   ANGLE_RATE_BP = [0., 5., 25.]
   ANGLE_RATE_UP = [2.5, 1.5, 0.2]  # windup limit
