@@ -2219,6 +2219,16 @@
     ],
     "package": "All"
   },
+  "LANDROVER DEFENDER 2023": {
+    "platform": "LANDROVER_DEFENDER_2023",
+    "make": "LANDROVER",
+    "brand": "landrover",
+    "model": "DEFENDER",
+    "year": [
+      "2023"
+    ],
+    "package": "All"
+  },
   "Lexus CT Hybrid 2017-18": {
     "platform": "LEXUS_CTH",
     "make": "Lexus",
@@ -2651,6 +2661,16 @@
       "2022"
     ],
     "package": "Adaptive Cruise Control (ACC)"
+  },
+  "RANGEROVER VOGUE 2017": {
+    "platform": "RANGEROVER_VOGUE_2017",
+    "make": "RANGEROVER",
+    "brand": "landrover",
+    "model": "VOGUE",
+    "year": [
+      "2017"
+    ],
+    "package": "All"
   },
   "Rivian R1S 2022-24": {
     "platform": "RIVIAN_R1_GEN1",
