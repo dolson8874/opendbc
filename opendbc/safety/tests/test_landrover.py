@@ -41,6 +41,7 @@ class TestLandroverSafety(common.PandaCarSafetyTest, common.AngleSteeringSafetyT
     values = {"ReqAngleTorque": angle,
               "EnAngle": 1 if enabled else 0,
              }
+    print(angle)
     return self.packer.make_can_msg_panda("LKAS_OP_TO_FLEXRAY", 1, values)
 
   """

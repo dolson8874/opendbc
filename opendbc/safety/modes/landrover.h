@@ -4,13 +4,14 @@
 
 #define FLEXRAY_MAX_ANGLE   1170  // angle * deg_to_can
 #define FLEXRAY_DEG_TO_CAN 13.009 //  1/factor, 1/0.07687
+#define FLEXRAY_USE_PSCM_OUT 1
 
 static bool landrover_flexray_harness = true;
 
 static void landrover_rx_hook(const CANPacket_t *msg) {
   if (landrover_flexray_harness) {
     if (msg->bus == 0U)  {
-      #if 1
+      #ifndef FLEXRAY_USE_PSCM_OUT
       // Steering angle: (0.1 * val) - 780 in deg.
       if (msg->addr == 0x56) {
         // Store it 1/10 deg to match steering request
@@ -105,8 +106,8 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
         unsigned int raw_angle_can = ((msg->data[3] & 0x3FU) << 8) | msg->data[4];
         int desired_angle = (int)raw_angle_can - 9000;
 
-        //bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
-        bool steer_control_enabled = GET_BIT(msg, 55U) == 1;
+        bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
+        //bool steer_control_enabled = GET_BIT(msg, 55U) == 1;
 
         if (steer_angle_cmd_checks(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS)) {
           tx = false;
@@ -153,8 +154,11 @@ static safety_config landrover_init(uint16_t param) {
 
   static RxCheck landrover_flexray_rx_checks[] = {
     {.msg = {{0x24, 0, 8, 15U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // LKAS_btn 
-    {.msg = {{0x56, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // PSCM_Out (angleTorque)
-    //{.msg = {{0x32, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // PSCM_Out (angleTorque)
+#ifndef FLEXRAY_USE_PSCM_OUT
+    {.msg = {{0x56, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},
+#else
+    {.msg = {{0x32, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // PSCM_Out (angleTorque)
+#endif
     {.msg = {{0x11, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // Speed Info02 
     {.msg = {{0x189, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // GasPedal (gas pedal)
     {.msg = {{0x84, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // StopAndGo (brakes)
