@@ -2294,6 +2294,16 @@
     ],
     "package": "All"
   },
+  "LANDROVER DEFENDER 2023": {
+    "platform": "LANDROVER_DEFENDER_2023",
+    "make": "LANDROVER",
+    "brand": "landrover",
+    "model": "DEFENDER",
+    "year": [
+      "2023"
+    ],
+    "package": "All"
+  },
   "Lexus CT Hybrid 2017-18": {
     "platform": "LEXUS_CTH",
     "make": "Lexus",
