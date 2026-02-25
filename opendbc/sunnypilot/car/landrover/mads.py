@@ -29,8 +29,8 @@ class MadsCarController:
     enable_mads = CC_SP.mads.available
     paused = CC_SP.mads.enabled and not CC.latActive
 
-    if any(be.type == ButtonType.lkas and be.pressed for be in CS.out.buttonEvents):
-      CS.lkas_disabled = False
+    #if any(be.type == ButtonType.lkas and be.pressed for be in CS.out.buttonEvents):
+    #  CS.lkas_disabled = False
 
     return MadsDataSP(enable_mads, paused, CS.lkas_disabled)
 
@@ -44,16 +44,28 @@ class MadsCarState(MadsCarStateBase):
     self.init_lkas_disabled = False
     self.lkas_disabled = False
 
-  def get_lkas_button(self, cp):
-    if self.CP.carFingerprint in EVA2_CARS:
-      lkas_button = cp.vl["LKAS_BTN"]["LKAS_Btn_on"]
-    else:
-      lkas_button = 0
+  @staticmethod
+  def create_lkas_button_events(cur_btn: int, prev_btn: int,
+                                buttons_dict: dict[int, structs.CarState.ButtonEvent.Type]) -> list[structs.CarState.ButtonEvent]:
+    events: list[structs.CarState.ButtonEvent] = []
 
-    return lkas_button
+    if cur_btn == prev_btn:
+      return events
+
+    state_changes = [
+      {"pressed": prev_btn != cur_btn},
+    ]
+
+    for change in state_changes:
+      if change["pressed"]:
+        events.append(structs.CarState.ButtonEvent(pressed=change["pressed"],
+                                                   type=buttons_dict.get(cur_btn, ButtonType.unknown)))
+    return events
 
   def update_mads(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
     cp = can_parsers[Bus.pt]
 
     self.prev_lkas_button = self.lkas_button
-    self.lkas_button = self.get_lkas_button(cp)
+    if self.CP.carFingerprint in EVA2_CARS:
+      self.lkas_button = cp.vl["LKAS_BTN"]["LKAS_Btn_on"]
+      ret.buttonEvents = self.create_lkas_button_events(self.lkas_button, self.prev_lkas_button, {1: ButtonType.lkas})

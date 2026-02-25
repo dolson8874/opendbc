@@ -1,9 +1,11 @@
 #pragma once
 
-#include "opendbc/safety/safety_declarations.h"
+#include "opendbc/safety/declarations.h"
 
-#define FLEXRAY_MAX_ANGLE   1170  // angle * deg_to_can
-#define FLEXRAY_DEG_TO_CAN 13.009 //  1/factor, 1/0.07687
+//#define FLEXRAY_MAX_ANGLE   1170  // angle * deg_to_can
+//#define FLEXRAY_DEG_TO_CAN 13.009 //  1/factor, 1/0.07687
+#define FLEXRAY_MAX_ANGLE   1125  // angle * deg_to_can
+#define FLEXRAY_DEG_TO_CAN 12.5   //  1/factor, 1/0.08
 #define FLEXRAY_USE_PSCM_OUT 1
 
 static bool landrover_flexray_harness = true;
@@ -17,7 +19,7 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
         // Store it 1/10 deg to match steering request
         int angle_raw = (((msg->data[3] & 0x3FU) << 8) | msg->data[4]);
 
-        int angle_meas_new = (angle_raw - 7800U ) * 0.1 * FLEXRAY_DEG_TO_CAN;
+        int angle_meas_new = (angle_raw - 7800U) * 0.1 * FLEXRAY_DEG_TO_CAN;
         update_sample(&angle_meas, angle_meas_new);
       }
       #else
@@ -57,7 +59,7 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
       // lkas btn
       if (msg->addr == 0x24U) {
         mads_button_press = GET_BIT(msg, 61U) ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
-    }
+      }
 
     }
 
@@ -92,7 +94,7 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
     .inactive_accel = 375,  // 0. m/s^2
   };
 
-  UNUSED(LANDROVER_LONG_LIMITS);
+  SAFETY_UNUSED(LANDROVER_LONG_LIMITS);
 
   if (landrover_flexray_harness) {
 
@@ -121,7 +123,7 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 
 
 static safety_config landrover_init(uint16_t param) {
-  const int LANDROVER_PARAM_FLEXRAY_HARNESS = 1;
+  const uint16_t LANDROVER_PARAM_FLEXRAY_HARNESS = 1;
 
 #ifdef _RR_2017_
   // CAN messages for RANGE ROVER 2017 camera

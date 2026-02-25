@@ -17,22 +17,27 @@ class CarInterface(CarInterfaceBase):
     ret.steerLimitTimer = 0.5
 
     ret.radarUnavailable = True
-    ret.alphaLongitudinalAvailable = ret.radarUnavailable
+    ret.alphaLongitudinalAvailable = not ret.radarUnavailable
 
     if alpha_long:
       ret.openpilotLongitudinalControl = True
+
+    ret.openpilotLongitudinalControl = alpha_long and ret.alphaLongitudinalAvailable
+    ret.pcmCruise = not ret.openpilotLongitudinalControl
 
     ret.steerControlType = structs.CarParams.SteerControlType.torque
 
     if ret.centerToFront == 0:
       ret.centerToFront = ret.wheelbase * 0.4
 
+    """
     if candidate in (CAR.RANGEROVER_VOGUE_2017):
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
       ret.steerActuatorDelay = 0.11
       ret.enableBsm = True
+    """
 
-    elif candidate in (CAR.LANDROVER_DEFENDER_2023):
+    if candidate in (CAR.LANDROVER_DEFENDER_2023):
       ret.steerControlType = structs.CarParams.SteerControlType.angle
       ret.enableBsm = True
 

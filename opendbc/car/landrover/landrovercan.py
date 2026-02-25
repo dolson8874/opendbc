@@ -21,6 +21,24 @@ def defender_crc(data):
 
    return crc ^ 0xcc
 
+def defender_adas_crc8(cnt: int, poly=0x1D, init=0x00, xorout=0x37) -> int:
+   crc = init ^ (cnt & 0xFF)
+   for _ in range(8):
+      crc = ((crc << 1) ^ poly) & 0xFF if (crc & 0x80) else (crc << 1) & 0xFF
+   return crc ^ xorout
+
+MASKS = [0x0D23, 0x1447, 0x2FAD, 0x5878, 0x3FD2, 0x75A4, 0x6748, 0x4091]
+
+# RR2017
+def parity16(v: int) -> int:
+   return bin(v & 0xFFFF).count("1") & 1
+
+def checksum_28f(byte3: int, byte4: int) -> int:
+   x = ((byte3 & 0xFF) << 8) | (byte4 & 0xFF)
+   out = 0
+   for i, m in enumerate(MASKS):
+      out |= (parity16(x & m) << i)
+   return out
 
 # RR 2017
 # 15 all green
@@ -43,7 +61,6 @@ def create_lkas_hud(packer, left_line, right_line):
   }
 
   return packer.make_can_msg("LKAS_STATUS", 0, values)
-
 
 # LKAS_COMMAND 0x28F (655) Lane-keeping signal to turn the wheel.
 def create_lkas_command(packer, lkas_run, frame, apply_steer):
@@ -74,6 +91,8 @@ def create_lkas_command(packer, lkas_run, frame, apply_steer):
 
 
 def create_lkas_command_defender(packer, enable, latActive, apply_angle, cnt):
+  if not latActive:
+    apply_angle = 0
 
   values = {
     "Lkas_checksum": 0,
@@ -88,6 +107,29 @@ def create_lkas_command_defender(packer, enable, latActive, apply_angle, cnt):
 
   return packer.make_can_msg("LKAS_OP_TO_FLEXRAY", CanBus.CAN2FLEXRAY, values)
 
+def create_adas_mode(packer, cnt):
+  dat = [0x00, 0x00, 0x00, 0x23, 0x28, 0x1A, 0x6C, 0x04]
+  dat[1] = cnt % 0x10
+  dat[5] = 0x1A
+  dat[6] =0x6C
+  dat[7] = 0x04
+
+  dat[0] = defender_adas_crc8(dat[1])
+
+  candat = binascii.hexlify(bytearray(dat))
+  return CanData(0x203,  codecs.decode(candat, 'hex'), CanBus.UNDERBODY)
+
+def create_adas_mode2(packer, cnt):
+  dat = [0x00, 0x00, 0x00, 0x23, 0x28, 0x1A, 0x6C, 0x04]
+  dat[1] = cnt % 0x10
+  dat[5] = 0x1A
+  dat[6] =0x6C
+  dat[7] = 0x04
+
+  dat[0] = defender_adas_crc8(dat[1])
+
+  candat = binascii.hexlify(bytearray(dat))
+  return CanData(0x203,  codecs.decode(candat, 'hex'), CanBus.CAM)
 
 def create_hud_command_defender(packer, enable, latActive, cnt, left_lane, right_lane):
 

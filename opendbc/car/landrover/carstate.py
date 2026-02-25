@@ -1,8 +1,7 @@
 import math
-from opendbc.car.common.conversions import Conversions as CV
 from opendbc.can import CANDefine
 from opendbc.can.parser import CANParser
-from opendbc.car import Bus, structs, create_button_events
+from opendbc.car import Bus, structs
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.landrover.values import DBC, CanBus, CarControllerParams, LandroverFlags
 from opendbc.sunnypilot.car.landrover.mads import MadsCarState
@@ -100,7 +99,6 @@ class CarState(CarStateBase, MadsCarState):
     ret_sp = structs.CarStateSP()
 
     self.is_metric = True
-    speed_factor = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
 
     ret.seatbeltUnlatched = (cp.vl["SeatBelt"]["SeatBelt_Driver"]  == 0)
     ret.doorOpen = not any([cp.vl["DoorStatus"]["FrontLeftDoor"],
@@ -150,15 +148,11 @@ class CarState(CarStateBase, MadsCarState):
     ret.cruiseState.nonAdaptive = False
     ret.cruiseState.standstill = False
 
-    prev_lc_button = self.lc_button
+    #prev_lc_button = self.lc_button
     self.lc_button = bool(cp.vl["LKAS_BTN"]["LKAS_Btn_on"])
-    ret.cruiseState.available = self.lc_button
+    ret.cruiseState.available = True
 
     MadsCarState.update_mads(self, ret, can_parsers)
-
-    ret.buttonEvents = [
-      *create_button_events(self.lc_button, prev_lc_button, {1: ButtonType.lkas}),
-    ]
 
     return ret, ret_sp
 

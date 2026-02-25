@@ -1,10 +1,11 @@
 from opendbc.can.packer import CANPacker
 from opendbc.car.can_definitions import CanData
 from opendbc.car import Bus
-from opendbc.car.lateral import apply_std_steer_angle_limits, apply_driver_steer_torque_limits
+from opendbc.car.lateral import apply_steer_angle_limits_vm, apply_driver_steer_torque_limits
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.landrover.landrovercan import create_lkas_command_defender, create_hud_command_defender, create_lkas_command, create_lkas_hud
 from opendbc.car.landrover.values import CarControllerParams, LandroverFlags, STATIC_MSGS
+from opendbc.car.vehicle_model import VehicleModel
 from opendbc.sunnypilot.car.landrover.mads import MadsCarController
 
 
@@ -85,6 +86,9 @@ class CarController(CarControllerBase, MadsCarController):
     self.lrflag = 0
     self.main_on_last = False
 
+    # Vehicle model used for lateral limiting
+    self.VM = VehicleModel(CP)
+
   def update(self, CC, CC_SP, CS, now_nanos):
     MadsCarController.update(self, CC, CC_SP, CS)
     actuators = CC.actuators
@@ -93,7 +97,7 @@ class CarController(CarControllerBase, MadsCarController):
     if self.mads.enable_mads:
       main_on = self.mads.paused or CC.latActive
     else:
-      main_on = CS.out.cruiseState.available
+      main_on = CS.out.cruiseState.enabled
 
     # Steering Torque
     new_torque = int(round(actuators.torque * self.params.STEER_MAX))
@@ -152,10 +156,10 @@ class CarController(CarControllerBase, MadsCarController):
       if self.frame % 2 == 0:
         # Angular rate limit based on speed
         self.apply_angle_last = \
-             apply_std_steer_angle_limits(actuators.steeringAngleDeg,
-                 self.apply_angle_last, CS.out.vEgo,
-                 CS.out.steeringAngleDeg, CC.latActive,
-                 CarControllerParams.ANGLE_LIMITS)
+          apply_steer_angle_limits_vm(actuators.steeringAngleDeg,
+             self.apply_angle_last, CS.out.vEgoRaw,
+             CS.out.steeringAngleDeg, CC.latActive,
+             CarControllerParams, self.VM)
 
         # LKAS msg
         can_sends.append(

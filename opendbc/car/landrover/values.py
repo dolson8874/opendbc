@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum, IntFlag
-from opendbc.car import Bus, CarSpecs, DbcDict, PlatformConfig, Platforms
-from opendbc.car.lateral import AngleSteeringLimits
+from opendbc.car import ACCELERATION_DUE_TO_GRAVITY, Bus, CarSpecs, DbcDict, PlatformConfig, Platforms
+from opendbc.car.lateral import AngleSteeringLimits, ISO_LATERAL_ACCEL
 from opendbc.car.structs import CarParams
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.docs_definitions import CarFootnote, CarHarness, CarDocs, CarParts, Column
@@ -18,15 +18,32 @@ class Buttons:
   GAP_DIST = 3
   CANCEL = 4  # on newer models, this is a pause/resume button
 
+# Add extra tolerance for average banked road since safety doesn't have the roll
+AVERAGE_ROAD_ROLL = 0.06
+# ~3.4 degrees, 6% superelevation. higher actual roll lowers lateral acceleration
+
 
 class CarControllerParams:
   ACCEL_MAX = 2.0 # m/s
   ACCEL_MIN = -3.5 # m/s
+
   ANGLE_LIMITS: AngleSteeringLimits = AngleSteeringLimits(
-    90,  # deg
-    ([0., 5., 25.], [2.5, 1.5, 0.2]),
-    ([0., 5., 25.], [5., 2.0, 0.3]),
+    # EPAS faults above this angle
+    360,  # deg
+    # Tesla uses a vehicle model instead, check carcontroller.py for details
+    ([], []),
+    ([], []),
+
+    # Vehicle model angle limits
+    # Add extra tolerance for average banked road since safety doesn't have the roll
+    MAX_LATERAL_ACCEL=ISO_LATERAL_ACCEL + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),  # ~3.6 m/s^2
+    MAX_LATERAL_JERK=3.0 + (ACCELERATION_DUE_TO_GRAVITY * AVERAGE_ROAD_ROLL),  # ~3.6 m/s^3
+
+    # limit angle rate to both prevent a fault and for low speed comfort (~12 mph rate down to 0 mph)
+    MAX_ANGLE_RATE=5,  # deg/20ms frame, EPS faults at 12 at a standstill
   )
+
+  STEER_STEP = 2
 
   def __init__(self, CP):
     self.STEER_DELTA_UP = 3
@@ -41,9 +58,10 @@ class CarControllerParams:
     if CP.carFingerprint in (CAR.LANDROVER_DEFENDER_2023):
       self.STEER_DRIVER_ALLOWANCE = 200
       self.STEER_DRIVER_MULTIPLIER = 2
-      self.STEER_THRESHOLD = 50
+      self.STEER_THRESHOLD = 30
       self.STEER_STEP = 2  # 50 Hz
 
+    """
     elif CP.carFingerprint in (CAR.RANGEROVER_VOGUE_2017):
       self.STEER_MAX = 500
       self.STEER_DELTA_UP = 2
@@ -53,6 +71,7 @@ class CarControllerParams:
       self.STEER_DRIVER_FACTOR = 1
       self.STEER_THRESHOLD = 150
       self.STEER_STEP = 4  # 25 Hz
+    """
 
 
 class CanBus:
@@ -155,6 +174,8 @@ class CAR(Platforms):
     lines={ModelLine.L663},
     years={ModelYear.L_2020, ModelYear.P_2023},
   )
+
+  """
   RANGEROVER_VOGUE_2017 = LandroverPlatformConfig(
     [
       LandroverCarDocs("RANGEROVER VOGUE 2017"),
@@ -164,6 +185,7 @@ class CAR(Platforms):
     lines={ModelLine.L405},
     years={ModelYear.H_2017},
   )
+  """
 
 
 def match_fw_to_car_fuzzy(live_fw_versions, vin, offline_fw_versions) -> set[str]:
