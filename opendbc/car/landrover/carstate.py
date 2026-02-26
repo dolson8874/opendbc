@@ -150,7 +150,7 @@ class CarState(CarStateBase, MadsCarState):
 
     #prev_lc_button = self.lc_button
     self.lc_button = bool(cp.vl["LKAS_BTN"]["LKAS_Btn_on"])
-    ret.cruiseState.available = True
+    ret.cruiseState.available = self.lc_button
 
     MadsCarState.update_mads(self, ret, can_parsers)
 
