@@ -6,7 +6,7 @@
 //#define FLEXRAY_DEG_TO_CAN 13.009 //  1/factor, 1/0.07687
 #define FLEXRAY_MAX_ANGLE   1125  // angle * deg_to_can
 #define FLEXRAY_DEG_TO_CAN 12.5   //  1/factor, 1/0.08
-#define FLEXRAY_USE_PSCM_OUT 1
+//#define FLEXRAY_USE_PSCM_OUT 1
 
 static bool landrover_flexray_harness = true;
 
@@ -76,6 +76,8 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
   const AngleSteeringLimits LANDROVER_STEERING_LIMITS = {
     .max_angle = FLEXRAY_MAX_ANGLE,  // angle * deg_to_can
     .angle_deg_to_can = FLEXRAY_DEG_TO_CAN, //  1/factor, 1/0.076
+    .frequency = 50U,
+    #if 0
     .angle_rate_up_lookup = {
       {0., 5., 25.},
       {2.5, 1.5, 0.2}
@@ -84,7 +86,15 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
       {0., 5., 25.},
       {5., 2.0, 0.3}
     },
+    #endif
   };
+
+  const AngleSteeringParams LANDROVER_STEERING_PARAMS = {
+    .slip_factor = -0.000580374383851451,  // calc_slip_factor(VM)
+    .steer_ratio = 19.,
+    .wheelbase = 3.022,
+  };
+
 
 
   // TODO find long params
@@ -109,7 +119,8 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 
         bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
 
-        if (steer_angle_cmd_checks(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS)) {
+        //if (steer_angle_cmd_checks(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS)) {
+        if (steer_angle_cmd_checks_vm(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS, LANDROVER_STEERING_PARAMS)) {
           tx = false;
         }
       }
