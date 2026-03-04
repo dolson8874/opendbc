@@ -15,11 +15,11 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
     if (msg->bus == 0U)  {
       #ifndef FLEXRAY_USE_PSCM_OUT
       // Steering angle: (0.1 * val) - 780 in deg.
-      if (msg->addr == 0x56) {
+      if (msg->addr == 0x56U) {
         // Store it 1/10 deg to match steering request
         int angle_raw = (((msg->data[3] & 0x3FU) << 8) | msg->data[4]);
 
-        int angle_meas_new = (angle_raw - 7800U) * 0.1 * FLEXRAY_DEG_TO_CAN;
+        int angle_meas_new = (angle_raw - 7800) * 0.1 * FLEXRAY_DEG_TO_CAN;
         update_sample(&angle_meas, angle_meas_new);
       }
       #else
