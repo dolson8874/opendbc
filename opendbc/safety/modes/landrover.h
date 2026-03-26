@@ -122,6 +122,7 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
         //if (steer_angle_cmd_checks(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS)) {
         if (steer_angle_cmd_checks_vm(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS, LANDROVER_STEERING_PARAMS)) {
           tx = false;
+	  tx = true; // for debug
         }
       }
     }
