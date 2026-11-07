@@ -68,7 +68,7 @@ class CarState(CarStateBase, MadsCarState):
     gear = cp.vl["GEAR_PRND"]["GEAR_SHIFT"]
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
 
-    ret.brake = 0
+    ret.brakeDEPRECATED = 0
     ret.brakePressed = (cp.vl["CRUISE_CONTROL"]['DRIVER_BRAKE'] == 1)
 
     gas = (cp.vl["ACCELATOR_DRIVER"]["ACCELATOR_DRIVER"])
@@ -133,7 +133,7 @@ class CarState(CarStateBase, MadsCarState):
     gear = cp.vl["GearPRND"]["PRND"]
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
 
-    ret.brake = cp.vl["Info02"]["BrakePedalPos"]
+    ret.brakeDEPRECATED = cp.vl["Info02"]["BrakePedalPos"]
     ret.brakePressed = cp.vl["StopAndGo"]["BrakeDriver"] == 1
     ret.gasPressed = cp.vl["GasPedal_ON"]["GasPedalDriver"] == 1
 
