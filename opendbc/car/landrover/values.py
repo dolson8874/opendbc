@@ -165,7 +165,8 @@ class CAR(Platforms):
     [
       LandroverCarDocs("LANDROVER DEFENDER 2023"),
     ],
-    CarSpecs(mass=2550, wheelbase=3.022, steerRatio=19.0, minSteerSpeed=50*CV.KPH_TO_MS),
+    # Legacy curb mass: 2550 kg; upstream now normalizes the vehicle model by mass.
+    CarSpecs(wheelbase=3.022, steerRatio=19.0, minSteerSpeed=50*CV.KPH_TO_MS),
     wmis=(WMI.LANDROVER),
     lines={ModelLine.L663},
     years={ModelYear.L_2020, ModelYear.P_2023},
@@ -198,6 +199,7 @@ def match_fw_to_car_fuzzy(live_fw_versions, vin, offline_fw_versions) -> set[str
 
 
 FW_QUERY_CONFIG = FwQueryConfig(
+  fw_version_regex=br"[A-Z0-9]{4}-[A-Z0-9]{6}-[A-Z0-9]{2,3}\x00*",
   requests=[
     Request(
       [StdQueries.TESTER_PRESENT_REQUEST, StdQueries.SUPPLIER_SOFTWARE_VERSION_REQUEST],

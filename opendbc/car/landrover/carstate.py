@@ -68,13 +68,13 @@ class CarState(CarStateBase, MadsCarState):
     gear = cp.vl["GEAR_PRND"]["GEAR_SHIFT"]
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
 
-    ret.brakeDEPRECATED = 0
+    ret.deprecated.brake = 0
     ret.brakePressed = (cp.vl["CRUISE_CONTROL"]['DRIVER_BRAKE'] == 1)
 
     gas = (cp.vl["ACCELATOR_DRIVER"]["ACCELATOR_DRIVER"])
     ret.gasPressed = gas >= 1
 
-    if self.CP.enableBsm:
+    if self.CP.deprecated.enableBsm:
       ret.leftBlindspot  = cp.vl["LEFT_ALERT"]["LEFT_ALERT_1"] != 0
       ret.rightBlindspot = cp.vl["RIGHT_ALERT"]["RIGHT_ALERT_1"] != 0
     else:
@@ -133,11 +133,11 @@ class CarState(CarStateBase, MadsCarState):
     gear = cp.vl["GearPRND"]["PRND"]
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
 
-    ret.brakeDEPRECATED = cp.vl["Info02"]["BrakePedalPos"]
+    ret.deprecated.brake = cp.vl["Info02"]["BrakePedalPos"]
     ret.brakePressed = cp.vl["StopAndGo"]["BrakeDriver"] == 1
     ret.gasPressed = cp.vl["GasPedal_ON"]["GasPedalDriver"] == 1
 
-    if self.CP.enableBsm:
+    if self.CP.deprecated.enableBsm:
       ret.leftBlindspot = cp.vl["BlindSpot"]["LeftBS"] == 4
       ret.rightBlindspot = cp.vl["BlindSpot"]["RightBS"] == 4
 
