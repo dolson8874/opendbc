@@ -34,7 +34,8 @@ class CruiseHud:
     flags, mode = data[1] & 0xF0, data[2] & 7
     if flags == 0x30 and mode == 3:
       self.active = True
-    elif flags == 0x80 and mode == 0:
+    elif (flags == 0x80 and mode == 0) or (flags == 0xC0 and mode == 6):
+      # The cluster displays cruise as inactive in mode 6 with Off and Gray set.
       self.active = False
     else:
       self.active = None

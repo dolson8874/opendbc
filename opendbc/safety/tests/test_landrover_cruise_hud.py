@@ -6,6 +6,7 @@ from opendbc.car.landrover.cruise_hud import ADDRESS, BUS, TIMEOUT_NS
 from opendbc.car.landrover.interface import CarInterface
 from opendbc.car.landrover.landrovercan import create_lkas_command_defender, defender_crc
 from opendbc.car.landrover.values import CAR, LandroverFlags
+from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.safety.tests.libsafety import libsafety_py
 
 
@@ -56,12 +57,36 @@ def test_timeout_duplicate_out_of_order_and_recovery_do_not_arm(bench):
   assert feed(bench, 310_001, ADDRESS, BUS, hud(0, 0x30, 3)) == (True, True, False)
 
 
-@pytest.mark.parametrize('bad', [b'\0' * 8, hud(2, 0x30, 3, reserved=1), hud(2, 0x30, 0x23), hud(2, 0xC0, 6)])
+@pytest.mark.parametrize('bad', [b'\0' * 8, hud(2, 0x30, 3, reserved=1), hud(2, 0x30, 0x23), hud(2, 0xC0, 0)])
 def test_invalid_or_unknown_frame_disarms_both_paths(bench, bad):
   feed(bench, 1, ADDRESS, BUS, hud(0, 0x80, 0))
   assert feed(bench, 50_001, ADDRESS, BUS, hud(1, 0x30, 3)) == (True, False, True)
   assert feed(bench, 100_001, ADDRESS, BUS, bad) == (False, True, False)
   assert feed(bench, 150_001, ADDRESS, BUS, hud(3, 0x30, 3)) == (True, True, False)
+
+
+def test_hud_mode6_inactive_preserves_manual_lkas_until_input_expires(bench):
+  interface, safety = bench
+  safety.mads_apply_alternative_experience(ALTERNATIVE_EXPERIENCE.ENABLE_MADS)
+  assert feed(bench, 1, ADDRESS, BUS, hud(0, 0xC0, 6)) == (False, True, False)
+  assert not safety.get_controls_allowed_lateral()
+  feed(bench, 10_001, 0x24, 0, bytes(7) + b'\x20')
+  assert safety.get_controls_allowed_lateral()
+  assert feed(bench, 50_001, ADDRESS, BUS, hud(1, 0xC0, 6)) == (False, False, False)
+  assert safety.get_controls_allowed_lateral()
+
+  address, data, bus = create_lkas_command_defender(interface.CC.packer, True, True, 0, 0)
+  packet = libsafety_py.make_CANPacket(address, bus, data)
+  assert safety.safety_tx_hook(packet)
+  safety.set_timer(50_001 + TIMEOUT_NS // 1000)
+  assert not safety.safety_tx_hook(packet)
+  assert not safety.get_controls_allowed_lateral()
+
+
+def test_hud_mode6_inactive_is_a_known_cruise_transition(bench):
+  assert feed(bench, 1, ADDRESS, BUS, hud(0, 0xC0, 6)) == (False, True, False)
+  assert feed(bench, 50_001, ADDRESS, BUS, hud(1, 0x30, 3)) == (True, False, True)
+  assert feed(bench, 100_001, ADDRESS, BUS, hud(2, 0xC0, 6)) == (False, True, False)
 
 
 def test_wrong_bus_and_panda_extended_frames(bench):

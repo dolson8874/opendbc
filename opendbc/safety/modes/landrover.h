@@ -59,7 +59,8 @@ static void landrover_cruise_hud_rx(const CANPacket_t *msg) {
         }
         landrover_hud_state = LANDROVER_HUD_ON;
         pcm_cruise_check(true);
-      } else if ((flags == 0x80U) && (mode == 0U)) {
+      } else if (((flags == 0x80U) && (mode == 0U)) || ((flags == 0xC0U) && (mode == 6U))) {
+        // Known inactive cruise leaves the independent LKAS button state intact.
         landrover_hud_state = LANDROVER_HUD_OFF;
         pcm_cruise_check(false);
       } else {
