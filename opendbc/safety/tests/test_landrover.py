@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 from opendbc.car.lateral import get_max_angle_delta_vm, get_max_angle_vm
+from opendbc.car.landrover.landrovercan import create_lkas_command_defender
 from opendbc.car.structs import CarParams
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.car.landrover.values import CarControllerParams, LandroverFlags
@@ -28,7 +29,7 @@ class TestLandroverSafety(common.CarSafetyTest, common.AngleSteeringSafetyTest):
 
   # Angle control limits
   STEER_ANGLE_MAX = 90  # deg
-  DEG_TO_CAN = 12.5
+  DEG_TO_CAN = 100 / 9
 
   ANGLE_RATE_BP = [0.0, 5.0, 25.0]
   ANGLE_RATE_UP = [2.5, 1.5, 0.2]  # windup limit
@@ -96,10 +97,44 @@ class TestLandroverSafety(common.CarSafetyTest, common.AngleSteeringSafetyTest):
     # VM-based safety does not use the generic fixed-angle violation behavior.
     pass
 
+  def test_angle_cmd_when_disabled(self):
+    # The controller sends neutral when disabled, even if the steering wheel is turned.
+    for angle in (-135, -90, -10.4, 0, 10.4, 90, 135):
+      self._reset_angle_measurement(angle)
+      for controls_allowed in (False, True):
+        self.safety.set_controls_allowed(controls_allowed)
+        address, data, bus = create_lkas_command_defender(self.packer, controls_allowed, False, angle, 0)
+        self.assertTrue(self._tx(libsafety_py.make_CANPacket(address, bus, data)))
+        for wrong_angle in (-0.09, 0.09, angle or 10):
+          self.assertFalse(self._tx(self._angle_cmd_msg(wrong_angle, False)))
+      self.safety.set_controls_allowed(False)
+      self.assertFalse(self._tx(self._angle_cmd_msg(angle, True)))
+
+  def test_activation_after_neutral_uses_measured_angle(self):
+    self._reset_speed_measurement(15)
+    self._reset_angle_measurement(10)
+    self.safety.set_controls_allowed_lateral(True)
+    self.assertTrue(self._tx(self._angle_cmd_msg(0, False)))
+    self.assertTrue(self._tx(self._angle_cmd_msg(10, True)))
+
+  def test_lateral_only_controls(self):
+    self.safety.set_controls_allowed(False)
+    self.safety.set_controls_allowed_lateral(True)
+    self.assertTrue(self._tx(self._angle_cmd_msg(0, True)))
+    self.safety.set_controls_allowed_lateral(False)
+    self.assertFalse(self._tx(self._angle_cmd_msg(0, True)))
+    self.assertTrue(self._tx(self._angle_cmd_msg(0, False)))
+
+  def test_steering_requires_flexray_harness(self):
+    self.safety.set_safety_hooks(CarParams.SafetyModel.landrover, 0)
+    self.safety.set_controls_allowed(True)
+    self.assertFalse(self._tx(self._angle_cmd_msg(0, True)))
+    self.assertFalse(self._tx(self._angle_cmd_msg(0, False)))
+
   def test_lateral_accel_limit(self):
     for speed in np.linspace(0, 40, 80):
       speed = max(speed, 1.0)
-      self._reset_speed_measurement(speed + 1.0)
+      self._reset_speed_measurement(speed)
       self.safety.set_controls_allowed(True)
 
       max_angle = min(get_max_angle_vm(speed, self.VM, CarControllerParams), self.STEER_ANGLE_MAX)
@@ -110,6 +145,14 @@ class TestLandroverSafety(common.CarSafetyTest, common.AngleSteeringSafetyTest):
         target_angle = sign * max_angle
         self.safety.set_desired_angle_last(int(round(target_angle * self.DEG_TO_CAN)))
         self.assertTrue(self._tx(self._angle_cmd_msg(target_angle, True)))
+
+  def test_lateral_accel_violation(self):
+    self._reset_speed_measurement(25)
+    self.safety.set_controls_allowed(True)
+    for angle in (-60, 60):
+      # Keep the delta at zero so only the acceleration check can reject this.
+      self._set_prev_desired_angle(angle)
+      self.assertFalse(self._tx(self._angle_cmd_msg(angle, True)))
 
   def test_lateral_jerk_limit(self):
     for speed in np.linspace(0, 40, 80):
@@ -128,6 +171,13 @@ class TestLandroverSafety(common.CarSafetyTest, common.AngleSteeringSafetyTest):
         self.assertTrue(self._tx(self._angle_cmd_msg(sign * max_delta, True)))
         self.assertTrue(self._tx(self._angle_cmd_msg(sign * max_delta, True)))
         self.assertTrue(self._tx(self._angle_cmd_msg(0.0, True)))
+
+  def test_lateral_jerk_violation(self):
+    self._reset_speed_measurement(25)
+    self.safety.set_controls_allowed(True)
+    for angle in (-5, 5):
+      self.assertTrue(self._tx(self._angle_cmd_msg(0, True)))
+      self.assertFalse(self._tx(self._angle_cmd_msg(angle, True)))
 
 
 if __name__ == "__main__":

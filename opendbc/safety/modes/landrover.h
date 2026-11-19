@@ -2,10 +2,9 @@
 
 #include "opendbc/safety/declarations.h"
 
-//#define FLEXRAY_MAX_ANGLE   1170  // angle * deg_to_can
-//#define FLEXRAY_DEG_TO_CAN 13.009 //  1/factor, 1/0.07687
-#define FLEXRAY_MAX_ANGLE   1125  // angle * deg_to_can
-#define FLEXRAY_DEG_TO_CAN 12.5   //  1/factor, 1/0.08
+// LKAS_OP_TO_FLEXRAY.ReqAngleTorque uses 0.09 degrees per count, centered at 9000.
+#define FLEXRAY_DEG_TO_CAN (100.0F / 9.0F)
+#define FLEXRAY_MAX_ANGLE 1000  // 90 degrees in request counts
 //#define FLEXRAY_USE_PSCM_OUT 1
 
 static bool landrover_flexray_harness = true;
@@ -16,15 +15,15 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
       #ifndef FLEXRAY_USE_PSCM_OUT
       // Steering angle: (0.1 * val) - 780 in deg.
       if (msg->addr == 0x56U) {
-        // Store it 1/10 deg to match steering request
         int angle_raw = (((msg->data[3] & 0x3FU) << 8) | msg->data[4]);
 
-        int angle_meas_new = (angle_raw - 7800) * 0.1 * FLEXRAY_DEG_TO_CAN;
+        // Convert SWM's 0.1 degree counts to request counts.
+        int angle_meas_new = ((angle_raw - 7800) * 10) / 9;
         update_sample(&angle_meas, angle_meas_new);
       }
       #else
 
-      // PSCM_Out Steering angleTorque: (0.07687 * val) - 691.83 in deg.
+      // PSCM_Out.AngleTorque uses the same scale and center as the request.
       if (msg->addr == 0x32U) {
         // Store it 1/10 deg to match steering request
         unsigned int raw_val = (((msg->data[2] & 0x3FU) << 8) | msg->data[3]);
@@ -75,7 +74,7 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 
   const AngleSteeringLimits LANDROVER_STEERING_LIMITS = {
     .max_angle = FLEXRAY_MAX_ANGLE,  // angle * deg_to_can
-    .angle_deg_to_can = FLEXRAY_DEG_TO_CAN, //  1/factor, 1/0.076
+    .angle_deg_to_can = FLEXRAY_DEG_TO_CAN,
     .frequency = 50U,
     #if 0
     .angle_rate_up_lookup = {
@@ -106,28 +105,22 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 
   SAFETY_UNUSED(LANDROVER_LONG_LIMITS);
 
-  if (landrover_flexray_harness) {
-
-    if (msg->bus == 1U) {
-
-      // Steering control 
-      // (0.076 * val) - 684 in deg.
-      // deg_to_can = 1/0.076 , max_angle = angle * deg_to_can
-      if (msg->addr == 0x1F0U) {
-        unsigned int raw_angle_can = ((msg->data[3] & 0x3FU) << 8) | msg->data[4];
-        int desired_angle = (int)raw_angle_can - 9000;
-
-        bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
-
-        //if (steer_angle_cmd_checks(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS)) {
-        if (steer_angle_cmd_checks_vm(desired_angle, steer_control_enabled, LANDROVER_STEERING_LIMITS, LANDROVER_STEERING_PARAMS)) {
-          tx = false;
-	  tx = true; // for debug
-        }
+  if ((msg->bus == 1U) && (msg->addr == 0x1F0U)) {
+    if (!landrover_flexray_harness) {
+      tx = false;
+    } else {
+      unsigned int raw_angle_can = ((msg->data[3] & 0x3FU) << 8) | msg->data[4];
+      int desired_angle = (int)raw_angle_can - 9000;
+      bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
+      if (steer_control_enabled) {
+        tx = !steer_angle_cmd_checks_vm(desired_angle, true, LANDROVER_STEERING_LIMITS, LANDROVER_STEERING_PARAMS);
+      } else {
+        // The FlexRay gateway receives a neutral request while LKAS is inactive.
+        // Prime the next active jerk check with the measured angle.
+        desired_angle_last = SAFETY_CLAMP(angle_meas.values[0], -FLEXRAY_MAX_ANGLE, FLEXRAY_MAX_ANGLE);
+        tx = desired_angle == 0;
       }
     }
-  } else {
-
   }
 
   return tx;
