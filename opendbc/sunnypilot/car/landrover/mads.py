@@ -8,7 +8,7 @@ See the LICENSE.md file in the root directory for more details.
 from enum import StrEnum
 from collections import namedtuple
 
-from opendbc.car import Bus, structs
+from opendbc.car import structs
 from opendbc.car.landrover.values import EVA2_CARS
 
 from opendbc.sunnypilot.mads_base import MadsCarStateBase
@@ -63,9 +63,7 @@ class MadsCarState(MadsCarStateBase):
     return events
 
   def update_mads(self, ret: structs.CarState, can_parsers: dict[StrEnum, CANParser]) -> None:
-    cp = can_parsers[Bus.pt]
-
     self.prev_lkas_button = self.lkas_button
     if self.CP.carFingerprint in EVA2_CARS:
-      self.lkas_button = cp.vl["LKAS_BTN"]["LKAS_Btn_on"]
+      self.lkas_button = int(ret.cruiseState.available)
       ret.buttonEvents = self.create_lkas_button_events(self.lkas_button, self.prev_lkas_button, {1: ButtonType.lkas})

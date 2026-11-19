@@ -5,6 +5,7 @@ from opendbc.car import Bus, structs
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.landrover import cruise_hud
 from opendbc.car.landrover.values import DBC, CanBus, CarControllerParams, LandroverFlags
+from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.sunnypilot.car.landrover.mads import MadsCarState
 
 ButtonType = structs.CarState.ButtonEvent.Type
@@ -28,10 +29,23 @@ class CarState(CarStateBase, MadsCarState):
     self.lc_button = 0
     self.cruise_hud = cruise_hud.CruiseHud()
     self.block_hud_enable = True
+    self.manual_lkas_armed = False
+    self.manual_lkas_on = False
+    self.lkas_button_received_ns: int | None = None
+
+  def check_lkas_input(self, now_ns):
+    if (not self.cruise_hud.transport_valid or
+        (self.lkas_button_received_ns is not None and now_ns - self.lkas_button_received_ns >= cruise_hud.LKAS_BUTTON_TIMEOUT_NS)):
+      self.manual_lkas_armed = False
+      self.manual_lkas_on = False
+      self.lkas_button_received_ns = None
 
   def update_cruise_hud(self, can_packets, now_ns):
+    manual_lkas = bool(self.CP.alternativeExperience & ALTERNATIVE_EXPERIENCE.ENABLE_MADS)
     previous = self.cruise_hud.active
     self.cruise_hud.expire(now_ns)
+    if manual_lkas:
+      self.check_lkas_input(now_ns)
     continuous = self.cruise_hud.active is not None
     for received_ns, frames in can_packets:
       if not 0 <= now_ns - received_ns < cruise_hud.TIMEOUT_NS:
@@ -40,6 +54,14 @@ class CarState(CarStateBase, MadsCarState):
         if bus == cruise_hud.BUS and address == cruise_hud.ADDRESS and len(data) == 8:
           self.cruise_hud.receive(data, received_ns)
           continuous &= self.cruise_hud.active is not None
+          if manual_lkas:
+            self.check_lkas_input(received_ns)
+        elif manual_lkas and bus == 0 and address == 0x24 and len(data) == 8 and self.cruise_hud.transport_valid:
+          self.lkas_button_received_ns = received_ns
+          button_on = bool(data[7] & 0x20)
+          if not button_on:
+            self.manual_lkas_armed = True
+          self.manual_lkas_on = button_on and self.manual_lkas_armed
     self.block_hud_enable = previous is not False or not continuous
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
@@ -170,6 +192,8 @@ class CarState(CarStateBase, MadsCarState):
 
     #prev_lc_button = self.lc_button
     self.lc_button = bool(cp.vl["LKAS_BTN"]["LKAS_Btn_on"])
+    if self.CP.flags & LandroverFlags.CRUISE_HUD_BENCH and self.CP.alternativeExperience & ALTERNATIVE_EXPERIENCE.ENABLE_MADS:
+      self.lc_button = self.manual_lkas_on
     ret.cruiseState.available = self.lc_button
 
     MadsCarState.update_mads(self, ret, can_parsers)

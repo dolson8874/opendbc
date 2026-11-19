@@ -13,25 +13,42 @@ enum { LANDROVER_HUD_UNKNOWN, LANDROVER_HUD_OFF, LANDROVER_HUD_ON };
 static uint8_t landrover_hud_state;
 static uint8_t landrover_hud_counter;
 static bool landrover_hud_counter_valid;
+static bool landrover_hud_transport_valid;
 static uint32_t landrover_hud_received;
+static bool landrover_lkas_button_armed;
+static uint32_t landrover_lkas_button_received;
 
-static void landrover_hud_unknown(void) {
+static void landrover_reset_lkas_button(void) {
+  landrover_lkas_button_armed = false;
+  mads_button_press = MADS_BUTTON_UNAVAILABLE;
+  m_mads_state.controls_requested_lateral = false;
+}
+
+static void landrover_hud_input_fault(void) {
+  landrover_hud_transport_valid = false;
   landrover_hud_state = LANDROVER_HUD_UNKNOWN;
   pcm_cruise_check(false);
+  landrover_reset_lkas_button();
   mads_exit_controls(MADS_DISENGAGE_REASON_LAG);
 }
 
-static void landrover_hud_check_timeout(uint32_t now) {
+static void landrover_check_input_timeouts(uint32_t now) {
   const uint32_t LANDROVER_HUD_TIMEOUT_US = 200000U;
+  const uint32_t LANDROVER_LKAS_BUTTON_TIMEOUT_US = 300000U;  // 0x24 is expected at 15 Hz.
   if (landrover_hud_counter_valid && (safety_get_ts_elapsed(now, landrover_hud_received) >= LANDROVER_HUD_TIMEOUT_US)) {
     landrover_hud_counter_valid = false;
-    landrover_hud_unknown();
+    landrover_hud_input_fault();
+  }
+  if (landrover_lkas_button_armed &&
+      (safety_get_ts_elapsed(now, landrover_lkas_button_received) >= LANDROVER_LKAS_BUTTON_TIMEOUT_US)) {
+    landrover_reset_lkas_button();
+    mads_exit_controls(MADS_DISENGAGE_REASON_LAG);
   }
 }
 
 static void landrover_cruise_hud_rx(const CANPacket_t *msg) {
   const uint32_t now = microsecond_timer_get();
-  landrover_hud_check_timeout(now);
+  landrover_check_input_timeouts(now);
   if ((msg->bus == 1U) && (msg->addr == 0x1FBU)) {
     uint8_t crc = 0U;
     for (uint8_t i = 1U; i <= 4U; i++) {
@@ -45,9 +62,10 @@ static void landrover_cruise_hud_rx(const CANPacket_t *msg) {
     const uint8_t counter = msg->data[1] & 0xFU;
     const uint8_t delta = (uint8_t)((counter + 16U - landrover_hud_counter) & 0xFU);
     if (!valid) {
-      landrover_hud_unknown();
+      landrover_hud_input_fault();
     } else if (!landrover_hud_counter_valid || ((delta != 0U) && (delta <= 7U))) {
       landrover_hud_counter_valid = true;
+      landrover_hud_transport_valid = true;
       landrover_hud_counter = counter;
       landrover_hud_received = now;
       const uint8_t flags = msg->data[1] & 0xF0U;
@@ -64,7 +82,9 @@ static void landrover_cruise_hud_rx(const CANPacket_t *msg) {
         landrover_hud_state = LANDROVER_HUD_OFF;
         pcm_cruise_check(false);
       } else {
-        landrover_hud_unknown();
+        // A fresh, valid report with unknown cruise semantics only clears PCM.
+        landrover_hud_state = LANDROVER_HUD_UNKNOWN;
+        pcm_cruise_check(false);
       }
     } else {
       // A duplicate or out-of-order counter cannot refresh the state.
@@ -123,7 +143,26 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
 
       // lkas btn
       if (msg->addr == 0x24U) {
-        mads_button_press = GET_BIT(msg, 61U) ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
+        const bool on = GET_BIT(msg, 61U);
+        if (!landrover_cruise_hud_bench) {
+          mads_button_press = on ? MADS_BUTTON_PRESSED : MADS_BUTTON_NOT_PRESSED;
+        } else if (!msg->extended && landrover_hud_transport_valid) {
+          landrover_lkas_button_received = microsecond_timer_get();
+          if (!on) {
+            if (mads_button_press == MADS_BUTTON_PRESSED) {
+              mads_exit_controls(MADS_DISENGAGE_REASON_BUTTON);
+            }
+            m_mads_state.controls_requested_lateral = false;
+            landrover_lkas_button_armed = true;
+            mads_button_press = MADS_BUTTON_NOT_PRESSED;
+          } else if (landrover_lkas_button_armed) {
+            mads_button_press = MADS_BUTTON_PRESSED;
+          } else {
+            // Require a fresh OFF-to-ON request after startup or input loss.
+          }
+        } else {
+          // Invalid or unavailable input cannot refresh the button.
+        }
       }
 
     }
@@ -173,7 +212,7 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 
   if ((msg->bus == 1U) && (msg->addr == 0x1F0U)) {
     if (landrover_cruise_hud_bench) {
-      landrover_hud_check_timeout(microsecond_timer_get());
+      landrover_check_input_timeouts(microsecond_timer_get());
     }
     if (!landrover_flexray_harness) {
       tx = false;
@@ -182,9 +221,15 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
       int desired_angle = (int)raw_angle_can - 9000;
       bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
       if (steer_control_enabled) {
-        const bool cruise_input_known = !landrover_cruise_hud_bench || (landrover_hud_state != LANDROVER_HUD_UNKNOWN);
+        bool steering_input_valid = true;
+        if (landrover_cruise_hud_bench) {
+          steering_input_valid = landrover_hud_state != LANDROVER_HUD_UNKNOWN;
+          if (m_mads_state.system_enabled) {
+            steering_input_valid = landrover_hud_transport_valid && (mads_button_press == MADS_BUTTON_PRESSED) && controls_allowed_lateral;
+          }
+        }
         tx = false;
-        if (cruise_input_known) {
+        if (steering_input_valid) {
           tx = !steer_angle_cmd_checks_vm(desired_angle, true, LANDROVER_STEERING_LIMITS, LANDROVER_STEERING_PARAMS);
         }
       } else {
@@ -247,16 +292,20 @@ static safety_config landrover_init(uint16_t param) {
 
 
   landrover_flexray_harness = GET_FLAG(param, LANDROVER_PARAM_FLEXRAY_HARNESS);
-  landrover_cruise_hud_bench = GET_FLAG(param, LANDROVER_PARAM_CRUISE_HUD_BENCH);
+  landrover_cruise_hud_bench = landrover_flexray_harness && GET_FLAG(param, LANDROVER_PARAM_CRUISE_HUD_BENCH);
   landrover_hud_state = LANDROVER_HUD_UNKNOWN;
   landrover_hud_received = 0U;
   landrover_hud_counter = 0U;
   landrover_hud_counter_valid = false;
+  landrover_hud_transport_valid = false;
+  landrover_lkas_button_received = 0U;
+  landrover_reset_lkas_button();
 
   safety_config ret;
 
   //if (landrover_flexray_harness) {
     ret = BUILD_SAFETY_CFG(landrover_flexray_rx_checks, LANDROVER_FLEXRAY_TX_MSGS);
+    ret.mads_button_only = landrover_cruise_hud_bench;
     if (!landrover_cruise_hud_bench) {
       ret.rx_checks_len--;  // The final HUD check belongs only to the bench mode.
     }

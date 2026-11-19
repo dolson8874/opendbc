@@ -43,12 +43,13 @@
 
 #define BUILD_SAFETY_CFG(rx, tx) ((safety_config){(rx), (sizeof((rx)) / sizeof((rx)[0])), \
                                                   (tx), (sizeof((tx)) / sizeof((tx)[0])), \
-                                                  false})
+                                                  false, false})
 #define SET_RX_CHECKS(rx, config) \
   do { \
     (config).rx_checks = (rx); \
     (config).rx_checks_len = sizeof((rx)) / sizeof((rx)[0]); \
     (config).disable_forwarding = false; \
+    (config).mads_button_only = false; \
   } while (0);
 
 #define SET_TX_MSGS(tx, config) \
@@ -212,6 +213,7 @@ typedef struct {
   const CanMsg *tx_msgs;
   int tx_msgs_len;
   bool disable_forwarding;
+  bool mads_button_only;
 } safety_config;
 
 typedef uint32_t (*get_checksum_t)(const CANPacket_t *msg);

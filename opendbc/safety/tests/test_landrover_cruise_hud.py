@@ -2,7 +2,7 @@ import pytest
 
 from opendbc.car import structs
 from opendbc.car.can_definitions import CanData
-from opendbc.car.landrover.cruise_hud import ADDRESS, BUS, TIMEOUT_NS
+from opendbc.car.landrover.cruise_hud import ADDRESS, BUS, LKAS_BUTTON_TIMEOUT_NS, TIMEOUT_NS
 from opendbc.car.landrover.interface import CarInterface
 from opendbc.car.landrover.landrovercan import create_lkas_command_defender, defender_crc
 from opendbc.car.landrover.values import CAR, LandroverFlags
@@ -67,9 +67,11 @@ def test_invalid_or_unknown_frame_disarms_both_paths(bench, bad):
 
 def test_hud_mode6_inactive_preserves_manual_lkas_until_input_expires(bench):
   interface, safety = bench
+  interface.CP.alternativeExperience = ALTERNATIVE_EXPERIENCE.ENABLE_MADS
   safety.mads_apply_alternative_experience(ALTERNATIVE_EXPERIENCE.ENABLE_MADS)
   assert feed(bench, 1, ADDRESS, BUS, hud(0, 0xC0, 6)) == (False, True, False)
   assert not safety.get_controls_allowed_lateral()
+  feed(bench, 5_001, 0x24, 0, bytes(8))
   feed(bench, 10_001, 0x24, 0, bytes(7) + b'\x20')
   assert safety.get_controls_allowed_lateral()
   assert feed(bench, 50_001, ADDRESS, BUS, hud(1, 0xC0, 6)) == (False, False, False)
@@ -81,6 +83,65 @@ def test_hud_mode6_inactive_preserves_manual_lkas_until_input_expires(bench):
   safety.set_timer(50_001 + TIMEOUT_NS // 1000)
   assert not safety.safety_tx_hook(packet)
   assert not safety.get_controls_allowed_lateral()
+
+
+def test_manual_lkas_is_separate_from_cruise_and_requires_fresh_button(bench):
+  interface, safety = bench
+  interface.CP.alternativeExperience = ALTERNATIVE_EXPERIENCE.ENABLE_MADS
+  safety.mads_apply_alternative_experience(ALTERNATIVE_EXPERIENCE.ENABLE_MADS)
+  button_on = bytes(7) + b'\x20'
+  feed(bench, 1, ADDRESS, BUS, hud(0, 0xC0, 6))
+  feed(bench, 10_001, 0x24, 0, button_on)
+  assert not safety.get_controls_allowed_lateral() and not interface.CS.out.cruiseState.available
+  feed(bench, 20_001, 0x24, 0, bytes(8))
+  assert feed(bench, 50_001, ADDRESS, BUS, hud(1, 0x30, 3)) == (True, False, True)
+  assert not safety.get_controls_allowed_lateral()
+  feed(bench, 60_001, 0x24, 0, button_on)
+  assert safety.get_controls_allowed_lateral() and interface.CS.out.cruiseState.available
+
+  assert feed(bench, 100_001, ADDRESS, BUS, hud(2, 0xC0, 0)) == (False, True, False)
+  assert safety.get_controls_allowed_lateral() and interface.CS.out.cruiseState.available
+  address, data, bus = create_lkas_command_defender(interface.CC.packer, True, True, 0, 0)
+  packet = libsafety_py.make_CANPacket(address, bus, data)
+  assert safety.safety_tx_hook(packet)
+  feed(bench, 110_001, 0x24, 0, bytes(8))
+  assert not safety.get_controls_allowed_lateral() and not interface.CS.out.cruiseState.available
+  assert not safety.safety_tx_hook(packet)
+
+  feed(bench, 120_001, 0x24, 0, button_on)
+  for counter, us in enumerate((150_001, 250_001, 350_001), start=3):
+    feed(bench, us, ADDRESS, BUS, hud(counter, 0xC0, 0))
+  assert safety.get_controls_allowed_lateral() and interface.CS.out.cruiseState.available
+  feed(bench, 120_001 + LKAS_BUTTON_TIMEOUT_NS // 1000, ADDRESS, BUS, hud(6, 0xC0, 0))
+  assert not safety.get_controls_allowed_lateral() and not interface.CS.out.cruiseState.available
+  feed(bench, 430_001, 0x24, 0, button_on)
+  assert not safety.get_controls_allowed_lateral() and not interface.CS.out.cruiseState.available
+
+
+@pytest.mark.parametrize('brake_mode', [ALTERNATIVE_EXPERIENCE.MADS_DISENGAGE_LATERAL_ON_BRAKE,
+                                       ALTERNATIVE_EXPERIENCE.MADS_PAUSE_LATERAL_ON_BRAKE])
+def test_manual_lkas_brake_and_hud_fault_remain_fail_closed(bench, brake_mode):
+  interface, safety = bench
+  settings = ALTERNATIVE_EXPERIENCE.ENABLE_MADS | brake_mode
+  interface.CP.alternativeExperience = settings
+  safety.mads_apply_alternative_experience(settings)
+  feed(bench, 1, ADDRESS, BUS, hud(0, 0xC0, 0))
+  feed(bench, 10_001, 0x24, 0, bytes(8))
+  button_on = bytes(7) + b'\x20'
+  feed(bench, 20_001, 0x24, 0, button_on)
+  assert safety.get_controls_allowed_lateral()
+  feed(bench, 30_001, 0x84, 0, bytes(2) + b'\x40' + bytes(5))
+  assert not safety.get_controls_allowed_lateral()
+  feed(bench, 40_001, 0x24, 0, bytes(8))
+  feed(bench, 50_001, 0x84, 0, bytes(8))
+  assert not safety.get_controls_allowed_lateral()
+  feed(bench, 60_001, 0x24, 0, button_on)
+  assert safety.get_controls_allowed_lateral()
+  feed(bench, 70_001, ADDRESS, BUS, bytes(8))
+  assert not safety.get_controls_allowed_lateral() and not interface.CS.out.cruiseState.available
+  feed(bench, 80_001, ADDRESS, BUS, hud(1, 0xC0, 0))
+  feed(bench, 90_001, 0x24, 0, button_on)
+  assert not safety.get_controls_allowed_lateral() and not interface.CS.out.cruiseState.available
 
 
 def test_hud_mode6_inactive_is_a_known_cruise_transition(bench):

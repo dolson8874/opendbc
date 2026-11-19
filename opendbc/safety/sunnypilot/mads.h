@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "opendbc/safety/declarations.h"
 #include "opendbc/safety/sunnypilot/mads_declarations.h"
 
 // ===============================
@@ -81,17 +82,18 @@ inline void m_update_binary_state(BinaryStateTracking *state) {
  * @return void
  */
 inline void m_update_control_state(void) {
-  bool allowed = true;
+  const bool button_only = current_safety_config.mads_button_only;
+  bool allowed = !button_only || (m_mads_state.mads_button.current == MADS_BUTTON_PRESSED);
 
   // Initial control requests from button or ACC transitions
-  if ((m_mads_state.acc_main.transition == MADS_EDGE_RISING) ||
-      (m_mads_state.mads_button.transition == MADS_EDGE_RISING) ||
-      (m_mads_state.op_controls_allowed.transition == MADS_EDGE_RISING)) {
+  if ((m_mads_state.mads_button.transition == MADS_EDGE_RISING) ||
+      (!button_only && ((m_mads_state.acc_main.transition == MADS_EDGE_RISING) ||
+                       (m_mads_state.op_controls_allowed.transition == MADS_EDGE_RISING)))) {
     m_mads_state.controls_requested_lateral = true;
   }
 
   // Primary control blockers - these prevent any further control processing
-  if (m_mads_state.acc_main.transition == MADS_EDGE_FALLING) {
+  if (!button_only && (m_mads_state.acc_main.transition == MADS_EDGE_FALLING)) {
     mads_exit_controls(MADS_DISENGAGE_REASON_ACC_MAIN_OFF);
     allowed = false;  // No matter what, no further control processing on this cycle
   }
