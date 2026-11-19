@@ -36,9 +36,9 @@ class CarState(CarStateBase, MadsCarState):
     for received_ns, frames in can_packets:
       if not 0 <= now_ns - received_ns < cruise_hud.TIMEOUT_NS:
         continue
-      for frame in frames:
-        if frame.src == cruise_hud.BUS and frame.address == cruise_hud.ADDRESS and len(frame.dat) == 8:
-          self.cruise_hud.receive(frame.dat, received_ns)
+      for address, data, bus in frames:
+        if bus == cruise_hud.BUS and address == cruise_hud.ADDRESS and len(data) == 8:
+          self.cruise_hud.receive(data, received_ns)
           continuous &= self.cruise_hud.active is not None
     self.block_hud_enable = previous is not False or not continuous
 
