@@ -78,6 +78,7 @@ class CanBus:
 
 class LandroverFlags(IntFlag):
   FLEXRAY_HARNESS = 1
+  CRUISE_HUD_BENCH = 2
 
 
 class Footnote(Enum):

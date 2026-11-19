@@ -3,6 +3,7 @@ from opendbc.can import CANDefine
 from opendbc.can.parser import CANParser
 from opendbc.car import Bus, structs
 from opendbc.car.interfaces import CarStateBase
+from opendbc.car.landrover import cruise_hud
 from opendbc.car.landrover.values import DBC, CanBus, CarControllerParams, LandroverFlags
 from opendbc.sunnypilot.car.landrover.mads import MadsCarState
 
@@ -25,6 +26,21 @@ class CarState(CarStateBase, MadsCarState):
     self.wheelbase = CP.wheelbase
 
     self.lc_button = 0
+    self.cruise_hud = cruise_hud.CruiseHud()
+    self.block_hud_enable = True
+
+  def update_cruise_hud(self, can_packets, now_ns):
+    previous = self.cruise_hud.active
+    self.cruise_hud.expire(now_ns)
+    continuous = self.cruise_hud.active is not None
+    for received_ns, frames in can_packets:
+      if not 0 <= now_ns - received_ns < cruise_hud.TIMEOUT_NS:
+        continue
+      for frame in frames:
+        if frame.src == cruise_hud.BUS and frame.address == cruise_hud.ADDRESS and len(frame.dat) == 8:
+          self.cruise_hud.receive(frame.dat, received_ns)
+          continuous &= self.cruise_hud.active is not None
+    self.block_hud_enable = previous is not False or not continuous
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     if self.CP.flags & LandroverFlags.FLEXRAY_HARNESS:
@@ -143,7 +159,11 @@ class CarState(CarStateBase, MadsCarState):
 
     ret.stockAeb = False
 
-    ret.cruiseState.enabled = cp.vl["CruiseInfo"]["CruiseOn"] == 1
+    if self.CP.flags & LandroverFlags.CRUISE_HUD_BENCH:
+      ret.cruiseState.enabled = self.cruise_hud.active is True
+      ret.blockPcmEnable = self.block_hud_enable
+    else:
+      ret.cruiseState.enabled = cp.vl["CruiseInfo"]["CruiseOn"] == 1
     ret.cruiseState.speed = ret.vEgoRaw
     ret.cruiseState.nonAdaptive = False
     ret.cruiseState.standstill = False

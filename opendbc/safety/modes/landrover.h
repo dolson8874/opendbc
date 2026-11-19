@@ -8,8 +8,67 @@
 //#define FLEXRAY_USE_PSCM_OUT 1
 
 static bool landrover_flexray_harness = true;
+static bool landrover_cruise_hud_bench = false;
+static const uint32_t LANDROVER_HUD_TIMEOUT_US = 200000U;
+enum { LANDROVER_HUD_UNKNOWN, LANDROVER_HUD_OFF, LANDROVER_HUD_ON };
+static uint8_t landrover_hud_state;
+static uint8_t landrover_hud_counter;
+static bool landrover_hud_counter_valid;
+static uint32_t landrover_hud_received;
+
+static void landrover_hud_unknown(void) {
+  landrover_hud_state = LANDROVER_HUD_UNKNOWN;
+  pcm_cruise_check(false);
+  mads_exit_controls(MADS_DISENGAGE_REASON_LAG);
+}
+
+static void landrover_cruise_hud_rx(const CANPacket_t *msg) {
+  const uint32_t now = microsecond_timer_get();
+  if (landrover_hud_counter_valid && (safety_get_ts_elapsed(now, landrover_hud_received) >= LANDROVER_HUD_TIMEOUT_US)) {
+    landrover_hud_counter_valid = false;
+    landrover_hud_unknown();
+  }
+  if ((msg->bus == 1U) && (msg->addr == 0x1FBU)) {
+    uint8_t crc = 0U;
+    for (uint8_t i = 1U; i <= 4U; i++) {
+      crc ^= msg->data[i];
+      for (uint8_t bit = 0U; bit < 8U; bit++) {
+        crc = (uint8_t)((crc << 1U) ^ (((crc & 0x80U) != 0U) ? 0x1DU : 0U));
+      }
+    }
+    const bool valid = !msg->extended && ((crc ^ 0xCCU) == msg->data[0]) && ((msg->data[2] & 0xE0U) == 0U) &&
+                       ((msg->data[4] | msg->data[5] | msg->data[6] | msg->data[7]) == 0U);
+    const uint8_t counter = msg->data[1] & 0xFU;
+    const uint8_t delta = (uint8_t)((counter + 16U - landrover_hud_counter) & 0xFU);
+    if (!valid) {
+      landrover_hud_unknown();
+    } else if (!landrover_hud_counter_valid || ((delta != 0U) && (delta <= 7U))) {
+      landrover_hud_counter_valid = true;
+      landrover_hud_counter = counter;
+      landrover_hud_received = now;
+      const uint8_t flags = msg->data[1] & 0xF0U;
+      const uint8_t mode = msg->data[2] & 7U;
+      if ((flags == 0x30U) && (mode == 3U)) {
+        if (landrover_hud_state == LANDROVER_HUD_UNKNOWN) {
+          // Recovery already in ON is not evidence of a new enable edge.
+          cruise_engaged_prev = true;
+        }
+        landrover_hud_state = LANDROVER_HUD_ON;
+        pcm_cruise_check(true);
+      } else if ((flags == 0x80U) && (mode == 0U)) {
+        landrover_hud_state = LANDROVER_HUD_OFF;
+        pcm_cruise_check(false);
+      } else {
+        landrover_hud_unknown();
+      }
+    }
+  }
+}
 
 static void landrover_rx_hook(const CANPacket_t *msg) {
+  if (landrover_cruise_hud_bench) {
+    landrover_cruise_hud_rx(msg);
+  }
   if (landrover_flexray_harness) {
     if (msg->bus == 0U)  {
       #ifndef FLEXRAY_USE_PSCM_OUT
@@ -51,7 +110,7 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
       }
 
       // Cruise state
-      if (msg->addr == 258U) {
+      if ((msg->addr == 258U) && !landrover_cruise_hud_bench) {
         pcm_cruise_check((GET_BIT(msg, 34U) == 1));
       }
 
@@ -70,6 +129,9 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
 
 
 static bool landrover_tx_hook(const CANPacket_t *msg) {
+  if (landrover_cruise_hud_bench) {
+    return false;
+  }
   bool tx = true;
 
   const AngleSteeringLimits LANDROVER_STEERING_LIMITS = {
@@ -129,6 +191,7 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 
 static safety_config landrover_init(uint16_t param) {
   const uint16_t LANDROVER_PARAM_FLEXRAY_HARNESS = 1;
+  const uint16_t LANDROVER_PARAM_CRUISE_HUD_BENCH = 2;
 
 #ifdef _RR_2017_
   // CAN messages for RANGE ROVER 2017 camera
@@ -168,15 +231,24 @@ static safety_config landrover_init(uint16_t param) {
     {.msg = {{0x189, 0, 8, 10U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // GasPedal (gas pedal)
     {.msg = {{0x84, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // StopAndGo (brakes)
     {.msg = {{258, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},     // CruiseInfo (cruise state)
+    {.msg = {{0x1FB, 1, 8, 20U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},  // Bench HUD; checked in RX hook
   };
 
 
   landrover_flexray_harness = GET_FLAG(param, LANDROVER_PARAM_FLEXRAY_HARNESS);
+  landrover_cruise_hud_bench = GET_FLAG(param, LANDROVER_PARAM_CRUISE_HUD_BENCH);
+  landrover_hud_state = LANDROVER_HUD_UNKNOWN;
+  landrover_hud_received = 0U;
+  landrover_hud_counter = 0U;
+  landrover_hud_counter_valid = false;
 
   safety_config ret;
 
   //if (landrover_flexray_harness) {
     ret = BUILD_SAFETY_CFG(landrover_flexray_rx_checks, LANDROVER_FLEXRAY_TX_MSGS);
+    if (!landrover_cruise_hud_bench) {
+      ret.rx_checks_len--;  // The final HUD check belongs only to the bench mode.
+    }
   //} else {
   //  ret = BUILD_SAFETY_CFG(landrover_rr_rx_checks, LANDROVER_TX_MSGS);
   //}
