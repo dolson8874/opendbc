@@ -21,13 +21,17 @@ static void landrover_hud_unknown(void) {
   mads_exit_controls(MADS_DISENGAGE_REASON_LAG);
 }
 
-static void landrover_cruise_hud_rx(const CANPacket_t *msg) {
+static void landrover_hud_check_timeout(uint32_t now) {
   const uint32_t LANDROVER_HUD_TIMEOUT_US = 200000U;
-  const uint32_t now = microsecond_timer_get();
   if (landrover_hud_counter_valid && (safety_get_ts_elapsed(now, landrover_hud_received) >= LANDROVER_HUD_TIMEOUT_US)) {
     landrover_hud_counter_valid = false;
     landrover_hud_unknown();
   }
+}
+
+static void landrover_cruise_hud_rx(const CANPacket_t *msg) {
+  const uint32_t now = microsecond_timer_get();
+  landrover_hud_check_timeout(now);
   if ((msg->bus == 1U) && (msg->addr == 0x1FBU)) {
     uint8_t crc = 0U;
     for (uint8_t i = 1U; i <= 4U; i++) {
@@ -131,7 +135,7 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
 
 
 static bool landrover_tx_hook(const CANPacket_t *msg) {
-  bool tx = !landrover_cruise_hud_bench;
+  bool tx = true;
 
   const AngleSteeringLimits LANDROVER_STEERING_LIMITS = {
     .max_angle = FLEXRAY_MAX_ANGLE,  // angle * deg_to_can
@@ -166,7 +170,10 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 
   SAFETY_UNUSED(LANDROVER_LONG_LIMITS);
 
-  if (tx && (msg->bus == 1U) && (msg->addr == 0x1F0U)) {
+  if ((msg->bus == 1U) && (msg->addr == 0x1F0U)) {
+    if (landrover_cruise_hud_bench) {
+      landrover_hud_check_timeout(microsecond_timer_get());
+    }
     if (!landrover_flexray_harness) {
       tx = false;
     } else {
@@ -174,7 +181,11 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
       int desired_angle = (int)raw_angle_can - 9000;
       bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
       if (steer_control_enabled) {
-        tx = !steer_angle_cmd_checks_vm(desired_angle, true, LANDROVER_STEERING_LIMITS, LANDROVER_STEERING_PARAMS);
+        const bool cruise_input_known = !landrover_cruise_hud_bench || (landrover_hud_state != LANDROVER_HUD_UNKNOWN);
+        tx = false;
+        if (cruise_input_known) {
+          tx = !steer_angle_cmd_checks_vm(desired_angle, true, LANDROVER_STEERING_LIMITS, LANDROVER_STEERING_PARAMS);
+        }
       } else {
         // The FlexRay gateway receives a neutral request while LKAS is inactive.
         // Prime the next active jerk check with the measured angle.

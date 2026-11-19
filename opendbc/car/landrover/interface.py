@@ -18,12 +18,6 @@ class CarInterface(CarInterfaceBase):
       self.CS.update_cruise_hud(can_packets, now_ns)
     return super().update(can_packets)
 
-  def apply(self, c, c_sp, now_nanos=None):
-    if self.CP.flags & LandroverFlags.CRUISE_HUD_BENCH:
-      # Keep the bench read-only even if an older Panda is connected.
-      return structs.CarControl.Actuators(), []
-    return super().apply(c, c_sp, now_nanos)
-
   @staticmethod
   def _get_params(ret: structs.CarParams, candidate, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
     ret.brand = "landrover"

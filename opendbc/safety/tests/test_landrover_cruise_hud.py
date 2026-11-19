@@ -1,12 +1,10 @@
-from types import SimpleNamespace
-
 import pytest
 
 from opendbc.car import structs
 from opendbc.car.can_definitions import CanData
 from opendbc.car.landrover.cruise_hud import ADDRESS, BUS, TIMEOUT_NS
 from opendbc.car.landrover.interface import CarInterface
-from opendbc.car.landrover.landrovercan import defender_crc
+from opendbc.car.landrover.landrovercan import create_lkas_command_defender, defender_crc
 from opendbc.car.landrover.values import CAR, LandroverFlags
 from opendbc.safety.tests.libsafety import libsafety_py
 
@@ -79,12 +77,42 @@ def test_wrong_bus_and_panda_extended_frames(bench):
   assert not safety.get_controls_allowed()
 
 
-def test_bench_host_and_panda_deny_command_transmission(bench):
+def test_hud_cruise_keeps_existing_lkas_and_hud_transmission(bench):
   interface, safety = bench
-  assert interface.apply(SimpleNamespace(), SimpleNamespace())[1] == []
-  safety.set_controls_allowed(True)
-  for address, src in ((0x1F0, 1), (0x1F9, 1), (0x1BE, 0), (ADDRESS, BUS)):
-    assert not safety.safety_tx_hook(libsafety_py.make_CANPacket(address, src, bytes(8)))
+  feed(bench, 1, ADDRESS, BUS, hud(0, 0x80, 0))
+  for us in range(1_001, 7_001, 1_000):
+    feed(bench, us, 0x11, 0, bytes(4) + (9000).to_bytes(2, 'big') + bytes(2))
+  feed(bench, 50_001, ADDRESS, BUS, hud(1, 0x30, 3))
+
+  control = structs.CarControl(enabled=True, latActive=True, actuators={'steeringAngleDeg': 0.09})
+  _, sends = interface.apply(control.as_reader(), structs.CarControlSP(), 50_001_000)
+  assert [(address, bus) for address, _, bus in sends] == [(0x1F0, 1), (0x1F9, 1)]
+  steer_data = sends[0][1]
+  assert steer_data[3] & 0x80
+  assert int.from_bytes(steer_data[3:5], 'big') & 0x3FFF != 9000
+  for address, data, bus in sends:
+    assert safety.safety_tx_hook(libsafety_py.make_CANPacket(address, bus, data))
+  assert not safety.safety_tx_hook(libsafety_py.make_CANPacket(ADDRESS, BUS, hud(1, 0x30, 3)))
+
+  addr, data, src = create_lkas_command_defender(interface.CC.packer, True, True, 100, 1)
+  assert not safety.safety_tx_hook(libsafety_py.make_CANPacket(addr, src, data))
+
+
+def test_lkas_rejects_expired_cruise_input_without_waiting_for_rx(bench):
+  interface, safety = bench
+  feed(bench, 1, ADDRESS, BUS, hud(0, 0x80, 0))
+  feed(bench, 50_001, ADDRESS, BUS, hud(1, 0x30, 3))
+  control = structs.CarControl(enabled=True, latActive=True).as_reader()
+  _, sends = interface.apply(control, structs.CarControlSP(), 50_001_000)
+  address, data, bus = sends[0]
+  packet = libsafety_py.make_CANPacket(address, bus, data)
+  assert safety.safety_tx_hook(packet)
+  safety.set_timer(50_001 + TIMEOUT_NS // 1000)
+  assert not safety.safety_tx_hook(packet)
+  assert not safety.get_controls_allowed()
+
+  addr, data, src = create_lkas_command_defender(interface.CC.packer, False, False, 0, 1)
+  assert safety.safety_tx_hook(libsafety_py.make_CANPacket(addr, src, data))
 
 
 @pytest.mark.parametrize(('setting', 'expected'), [('0', False), ('1', True), ('invalid', True)])
