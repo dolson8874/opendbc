@@ -18,13 +18,14 @@ def hud(counter, flags, mode, reserved=0):
 
 @pytest.fixture
 def bench(monkeypatch):
-  monkeypatch.setenv('LANDROVER_CRUISE_HUD_BENCH', '1')
+  monkeypatch.delenv('LANDROVER_CRUISE_HUD_BENCH', raising=False)
   monkeypatch.setenv('REPLAY', '1')
   cp = CarInterface.get_non_essential_params(CAR.LANDROVER_DEFENDER_2023)
   cp_sp = CarInterface.get_non_essential_params_sp(cp, CAR.LANDROVER_DEFENDER_2023)
   assert cp.flags & LandroverFlags.CRUISE_HUD_BENCH
   safety = libsafety_py.libsafety
-  assert safety.set_safety_hooks(structs.CarParams.SafetyModel.landrover, int(cp.flags)) == 0
+  config = cp.safetyConfigs[0]
+  assert safety.set_safety_hooks(config.safetyModel.raw, config.safetyParam) == 0
   safety.init_tests()
   return CarInterface(cp, cp_sp), safety
 
@@ -84,3 +85,18 @@ def test_bench_host_and_panda_deny_command_transmission(bench):
   safety.set_controls_allowed(True)
   for address, src in ((0x1F0, 1), (0x1F9, 1), (0x1BE, 0), (ADDRESS, BUS)):
     assert not safety.safety_tx_hook(libsafety_py.make_CANPacket(address, src, bytes(8)))
+
+
+@pytest.mark.parametrize(('setting', 'expected'), [('0', False), ('1', True), ('invalid', True)])
+def test_flexray_config_override(monkeypatch, setting, expected):
+  monkeypatch.setenv('LANDROVER_CRUISE_HUD_BENCH', setting)
+  cp = CarInterface.get_non_essential_params(CAR.LANDROVER_DEFENDER_2023)
+  assert bool(cp.flags & LandroverFlags.CRUISE_HUD_BENCH) == expected
+  assert cp.safetyConfigs[0].safetyParam == cp.flags
+
+
+def test_non_flexray_keeps_legacy_config(monkeypatch):
+  monkeypatch.delenv('LANDROVER_CRUISE_HUD_BENCH', raising=False)
+  cp = CarInterface._get_params(structs.CarParams(), CAR.LANDROVER_DEFENDER_2023, {}, [], False, False, False)
+  assert not cp.flags & LandroverFlags.CRUISE_HUD_BENCH
+  assert cp.safetyConfigs[0].safetyParam == cp.flags

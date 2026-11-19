@@ -56,7 +56,7 @@ class CarInterface(CarInterfaceBase):
       ret.steerControlType = structs.CarParams.SteerControlType.angle
       ret.deprecated.enableBsm = True
 
-    if ret.flags & LandroverFlags.FLEXRAY_HARNESS and os.environ.get('LANDROVER_CRUISE_HUD_BENCH') == '1':
+    if ret.flags & LandroverFlags.FLEXRAY_HARNESS and os.environ.get('LANDROVER_CRUISE_HUD_BENCH') != '0':
       ret.flags |= int(LandroverFlags.CRUISE_HUD_BENCH)
     ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.landrover, ret.flags)]
 
