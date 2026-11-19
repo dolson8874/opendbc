@@ -9,7 +9,6 @@
 
 static bool landrover_flexray_harness = true;
 static bool landrover_cruise_hud_bench = false;
-static const uint32_t LANDROVER_HUD_TIMEOUT_US = 200000U;
 enum { LANDROVER_HUD_UNKNOWN, LANDROVER_HUD_OFF, LANDROVER_HUD_ON };
 static uint8_t landrover_hud_state;
 static uint8_t landrover_hud_counter;
@@ -23,6 +22,7 @@ static void landrover_hud_unknown(void) {
 }
 
 static void landrover_cruise_hud_rx(const CANPacket_t *msg) {
+  const uint32_t LANDROVER_HUD_TIMEOUT_US = 200000U;
   const uint32_t now = microsecond_timer_get();
   if (landrover_hud_counter_valid && (safety_get_ts_elapsed(now, landrover_hud_received) >= LANDROVER_HUD_TIMEOUT_US)) {
     landrover_hud_counter_valid = false;
@@ -61,6 +61,8 @@ static void landrover_cruise_hud_rx(const CANPacket_t *msg) {
       } else {
         landrover_hud_unknown();
       }
+    } else {
+      // A duplicate or out-of-order counter cannot refresh the state.
     }
   }
 }
@@ -129,10 +131,7 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
 
 
 static bool landrover_tx_hook(const CANPacket_t *msg) {
-  if (landrover_cruise_hud_bench) {
-    return false;
-  }
-  bool tx = true;
+  bool tx = !landrover_cruise_hud_bench;
 
   const AngleSteeringLimits LANDROVER_STEERING_LIMITS = {
     .max_angle = FLEXRAY_MAX_ANGLE,  // angle * deg_to_can
@@ -167,7 +166,7 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 
   SAFETY_UNUSED(LANDROVER_LONG_LIMITS);
 
-  if ((msg->bus == 1U) && (msg->addr == 0x1F0U)) {
+  if (tx && (msg->bus == 1U) && (msg->addr == 0x1F0U)) {
     if (!landrover_flexray_harness) {
       tx = false;
     } else {
