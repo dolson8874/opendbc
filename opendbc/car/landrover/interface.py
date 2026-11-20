@@ -5,12 +5,14 @@ from opendbc.car import get_safety_config, structs
 from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.landrover.carcontroller import CarController
 from opendbc.car.landrover.carstate import CarState
+from opendbc.car.landrover.radar_interface import RadarInterface
 from opendbc.car.landrover.values import CAR, LandroverFlags
 
 
 class CarInterface(CarInterfaceBase):
   CarState = CarState
   CarController = CarController
+  RadarInterface = RadarInterface
 
   def update(self, can_packets):
     use_cruise_hud = bool(self.CP.flags & LandroverFlags.CRUISE_HUD_BENCH)

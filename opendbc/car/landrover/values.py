@@ -152,7 +152,9 @@ class LandroverPlatformConfig(PlatformConfig):
 @dataclass
 class LandroverFlexrayPlatformConfig(PlatformConfig):
   dbc_dict: DbcDict = field(default_factory=lambda: {
-    Bus.pt: "landrover_defender_2023"})
+    Bus.pt: "landrover_defender_2023",
+    Bus.radar: "landrover_defender_radar_can1",
+  })
   wmis: set[WMI] = field(default_factory=set)
   lines: set[ModelLine] = field(default_factory=set)
   years: set[ModelYear] = field(default_factory=set)
