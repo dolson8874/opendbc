@@ -175,6 +175,17 @@ BO_ 505 HUD_OP_TO_FLEXRAY: 8 comma
  SG_ lane_right : 51|3@1+ (1,0) [0|7] "" XXX
  SG_ Engaged : 55|1@0+ (1,0) [0|1] "" XXX
 
+BO_ 507 FPGA_CRUISE_HUD: 8 fpga
+ SG_ CRC : 7|8@0+ (1,0) [0|255] "" XXX
+ SG_ ROLLING_COUNTER : 11|4@0+ (1,0) [0|15] "" XXX
+ SG_ CRUISE_ON : 12|1@0+ (1,0) [0|1] "" XXX
+ SG_ GREEN : 13|1@0+ (1,0) [0|1] "" XXX
+ SG_ GRAY : 14|1@0+ (1,0) [0|1] "" XXX
+ SG_ CRUISE_OFF : 15|1@0+ (1,0) [0|1] "" XXX
+ SG_ MODE_RAW : 18|3@0+ (1,0) [0|7] "" XXX
+ SG_ GAP_RAW : 20|2@0+ (1,0) [0|3] "" XXX
+ SG_ H_RAW : 31|8@0+ (1,0) [0|255] "" XXX
+
 BO_ 515 ADAS: 8 pt
  SG_ NEW_SIGNAL_1 : 7|8@0+ (1,0) [0|255] "" XXX
  SG_ COUNTER : 11|4@0+ (1,0) [0|15] "" XXX
@@ -338,6 +349,10 @@ BO_ 12546 FLEXRAY_MSG_3102_E0: 31 dadc
 
 CM_ SG_ 264 SPORT_SELECTED "Sport indication. Interpret with PRND=3 and the low nibble of byte 3 equal to 8 (zero-based bytes). The bit alone does not determine PRND.";
 CM_ SG_ 264 SPORT_GEAR_DISPLAY_CODE "Display code. Use only in Sport with PRND=3 and both upper bits of byte 4 clear. Code 0 denotes Sport Auto in that context. The code does not measure the mechanically engaged gear.";
+CM_ BO_ 507 "FPGA cruise status report on CAN1.";
+CM_ SG_ 507 MODE_RAW "Additional validation required.";
+CM_ SG_ 507 GAP_RAW "Additional validation required.";
+CM_ SG_ 507 H_RAW "Additional validation required.";
 
 VAL_ 132 Status 1 "Go" 2 "Stop" 3 "Start Go";
 VAL_ 264 PRND_POS 0 "Parking" 1 "Reverse" 2 "Neutral" 4 "Drive";

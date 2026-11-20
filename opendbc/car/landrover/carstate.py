@@ -27,7 +27,8 @@ class CarState(CarStateBase, MadsCarState):
     self.wheelbase = CP.wheelbase
 
     self.lc_button = 0
-    self.cruise_hud = cruise_hud.CruiseHud()
+    if CP.flags & LandroverFlags.CRUISE_HUD_BENCH:
+      self.cruise_hud = cruise_hud.CruiseHud(DBC[CP.carFingerprint][Bus.pt])
     self.block_hud_enable = True
     self.manual_lkas_armed = False
     self.manual_lkas_on = False
@@ -201,9 +202,11 @@ class CarState(CarStateBase, MadsCarState):
     return ret, ret_sp
 
   def get_can_parser_defender(self, CP):
-    return {
-      Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus.UNDERBODY),
-    }
+    dbc_name = DBC[CP.carFingerprint][Bus.pt]
+    parsers = {Bus.pt: CANParser(dbc_name, [], CanBus.UNDERBODY)}
+    if CP.flags & LandroverFlags.CRUISE_HUD_BENCH:
+      parsers[Bus.adas] = CANParser(dbc_name, [(cruise_hud.ADDRESS, cruise_hud.FREQUENCY_HZ)], cruise_hud.BUS)
+    return parsers
 
   def get_can_parsers(self, CP, CP_SP):
     if CP.flags & LandroverFlags.FLEXRAY_HARNESS:

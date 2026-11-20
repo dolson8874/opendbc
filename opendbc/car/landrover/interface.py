@@ -13,10 +13,15 @@ class CarInterface(CarInterfaceBase):
   CarController = CarController
 
   def update(self, can_packets):
-    if self.CP.flags & LandroverFlags.CRUISE_HUD_BENCH:
+    use_cruise_hud = bool(self.CP.flags & LandroverFlags.CRUISE_HUD_BENCH)
+    if use_cruise_hud:
       now_ns = can_packets[-1][0] if 'REPLAY' in os.environ and can_packets else time.monotonic_ns()
       self.CS.update_cruise_hud(can_packets, now_ns)
-    return super().update(can_packets)
+    state, state_sp = super().update(can_packets)
+    if use_cruise_hud:
+      # The generic parser checks message presence. HUD transport checks CRC, counter and freshness.
+      state.canValid = state.canValid and self.CS.cruise_hud.transport_valid
+    return state, state_sp
 
   @staticmethod
   def _get_params(ret: structs.CarParams, candidate, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:

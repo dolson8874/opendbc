@@ -1,14 +1,17 @@
+from opendbc.can.dbc import DBC
 from opendbc.car.landrover.landrovercan import defender_crc
 
 ADDRESS = 0x1FB
 BUS = 1
+FREQUENCY_HZ = 20
 TIMEOUT_NS = 200_000_000
 LKAS_BUTTON_TIMEOUT_NS = 300_000_000
 
 
 class CruiseHud:
   """Bench interpretation of the known Defender HUD combinations."""
-  def __init__(self):
+  def __init__(self, dbc_name: str):
+    self.signals = DBC(dbc_name).addr_to_msg[ADDRESS].sigs
     self.counter: int | None = None
     self.received_ns = 0
     self.active: bool | None = None
@@ -24,11 +27,12 @@ class CruiseHud:
     if self.counter is not None and time_ns < self.received_ns:
       return
     self.expire(time_ns)
-    if len(data) != 8 or defender_crc(data[1:5]) != data[0] or data[2] & 0xE0 or any(data[4:]):
+    if (len(data) != 8 or defender_crc(data[1:5]) != self.signals["CRC"].get_raw_value(data)
+        or data[2] & 0xE0 or any(data[4:])):
       self.active = None
       self.transport_valid = False
       return
-    counter = data[1] & 0xF
+    counter = self.signals["ROLLING_COUNTER"].get_raw_value(data)
     if self.counter is not None:
       delta = (counter - self.counter) & 0xF
       if not 1 <= delta <= 7:
@@ -36,10 +40,14 @@ class CruiseHud:
     self.counter = counter
     self.received_ns = time_ns
     self.transport_valid = True
-    flags, mode = data[1] & 0xF0, data[2] & 7
-    if flags == 0x30 and mode == 3:
+    on = self.signals["CRUISE_ON"].get_raw_value(data)
+    off = self.signals["CRUISE_OFF"].get_raw_value(data)
+    green = self.signals["GREEN"].get_raw_value(data)
+    gray = self.signals["GRAY"].get_raw_value(data)
+    mode = self.signals["MODE_RAW"].get_raw_value(data)
+    if (on, off, green, gray, mode) == (1, 0, 1, 0, 3):
       self.active = True
-    elif (flags == 0x80 and mode == 0) or (flags == 0xC0 and mode == 6):
+    elif (on, off, green, gray, mode) in ((0, 1, 0, 0, 0), (0, 1, 0, 1, 6)):
       # The cluster displays cruise as inactive in mode 6 with Off and Gray set.
       self.active = False
     else:
