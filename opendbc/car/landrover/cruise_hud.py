@@ -16,6 +16,14 @@ class CruiseHud:
     self.received_ns = 0
     self.active: bool | None = None
     self.transport_valid = False
+    self._speed_raw = 0
+
+  @property
+  def set_speed_kph(self) -> int:
+    # H reflects the metric cluster setting. Publish only an active setting.
+    if self.active is True and 0 < self._speed_raw < 0xFF:
+      return self._speed_raw
+    return 0
 
   def expire(self, now_ns: int) -> None:
     if self.counter is not None and now_ns - self.received_ns >= TIMEOUT_NS:
@@ -40,6 +48,7 @@ class CruiseHud:
     self.counter = counter
     self.received_ns = time_ns
     self.transport_valid = True
+    self._speed_raw = self.signals["H_RAW"].get_raw_value(data)
     on = self.signals["CRUISE_ON"].get_raw_value(data)
     off = self.signals["CRUISE_OFF"].get_raw_value(data)
     green = self.signals["GREEN"].get_raw_value(data)

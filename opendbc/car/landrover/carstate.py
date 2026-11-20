@@ -2,6 +2,7 @@ import math
 from opendbc.can import CANDefine
 from opendbc.can.parser import CANParser
 from opendbc.car import Bus, structs
+from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.landrover import cruise_hud
 from opendbc.car.landrover.values import DBC, CanBus, CarControllerParams, LandroverFlags
@@ -184,10 +185,12 @@ class CarState(CarStateBase, MadsCarState):
 
     if self.CP.flags & LandroverFlags.CRUISE_HUD_BENCH:
       ret.cruiseState.enabled = self.cruise_hud.active is True
+      ret.cruiseState.speed = self.cruise_hud.set_speed_kph * CV.KPH_TO_MS
+      ret.cruiseState.speedCluster = ret.cruiseState.speed
       ret.blockPcmEnable = self.block_hud_enable
     else:
       ret.cruiseState.enabled = cp.vl["CruiseInfo"]["CruiseOn"] == 1
-    ret.cruiseState.speed = ret.vEgoRaw
+      ret.cruiseState.speed = ret.vEgoRaw
     ret.cruiseState.nonAdaptive = False
     ret.cruiseState.standstill = False
 
