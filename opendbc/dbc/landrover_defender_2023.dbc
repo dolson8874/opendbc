@@ -148,6 +148,8 @@ BO_ 258 CruiseInfo: 8 pt
 
 BO_ 264 GearPRND: 8 pt
  SG_ PRND_POS : 26|3@0+ (1,0) [0|7] "" XXX
+ SG_ SPORT_SELECTED : 27|1@0+ (1,0) [0|1] "" XXX
+ SG_ SPORT_GEAR_DISPLAY_CODE : 37|6@0+ (1,0) [0|63] "" XXX
  SG_ PRND : 41|2@0+ (1,0) [0|3] "" XXX
 
 BO_ 393 GasPedal_ON: 8 pt
@@ -334,9 +336,13 @@ BO_ 12546 FLEXRAY_MSG_3102_E0: 31 dadc
  SG_ Aeb_Warn_Icon2 : 95|1@0+ (1,0) [0|1] "" XXX
  SG_ AebWarn_Icon3 : 96|1@0+ (1,0) [0|1] "" XXX
 
+CM_ SG_ 264 SPORT_SELECTED "Sport indication. Interpret with PRND=3 and the low nibble of byte 3 equal to 8 (zero-based bytes). The bit alone does not determine PRND.";
+CM_ SG_ 264 SPORT_GEAR_DISPLAY_CODE "Display code. Use only in Sport with PRND=3 and both upper bits of byte 4 clear. Code 0 denotes Sport Auto in that context. The code does not measure the mechanically engaged gear.";
+
 VAL_ 132 Status 1 "Go" 2 "Stop" 3 "Start Go";
 VAL_ 264 PRND_POS 0 "Parking" 1 "Reverse" 2 "Neutral" 4 "Drive";
 VAL_ 264 PRND 0 "PARK" 1 "REVERSE" 2 "NEUTRAL" 3 "DRIVE";
+VAL_ 264 SPORT_GEAR_DISPLAY_CODE 0 "No numbered gear" 1 "S1" 2 "S2" 4 "S3" 8 "S4" 16 "S5" 32 "S6" 33 "S7" 34 "S8";
 VAL_ 399 RightBS 4 "detect Right BS" 3 "Normal Standby" 2 "Normal";
 VAL_ 399 LeftBS 4 "Detect LeftBS" 3 "Normal Standby" 2 "Normal";
 VAL_ 655 FrontLeftDoor_Driver 0 "opened" 1 "closed";
