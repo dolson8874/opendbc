@@ -6,6 +6,7 @@ BUS = 1
 FREQUENCY_HZ = 20
 TIMEOUT_NS = 200_000_000
 LKAS_BUTTON_TIMEOUT_NS = 300_000_000
+GAP_LEVEL_BY_RAW = (3, 2, 4, 1)
 
 
 class CruiseHud:
@@ -17,6 +18,7 @@ class CruiseHud:
     self.active: bool | None = None
     self.transport_valid = False
     self._speed_raw = 0
+    self._gap_raw = 0
 
   @property
   def set_speed_kph(self) -> int:
@@ -24,6 +26,10 @@ class CruiseHud:
     if self.active is True and 0 < self._speed_raw < 0xFF:
       return self._speed_raw
     return 0
+
+  @property
+  def gap_level(self) -> int:
+    return GAP_LEVEL_BY_RAW[self._gap_raw] if self.active is True else 0
 
   def expire(self, now_ns: int) -> None:
     if self.counter is not None and now_ns - self.received_ns >= TIMEOUT_NS:
@@ -49,6 +55,7 @@ class CruiseHud:
     self.received_ns = time_ns
     self.transport_valid = True
     self._speed_raw = self.signals["H_RAW"].get_raw_value(data)
+    self._gap_raw = self.signals["GAP_RAW"].get_raw_value(data)
     on = self.signals["CRUISE_ON"].get_raw_value(data)
     off = self.signals["CRUISE_OFF"].get_raw_value(data)
     green = self.signals["GREEN"].get_raw_value(data)

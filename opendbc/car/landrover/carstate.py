@@ -187,6 +187,7 @@ class CarState(CarStateBase, MadsCarState):
       ret.cruiseState.enabled = self.cruise_hud.active is True
       ret.cruiseState.speed = self.cruise_hud.set_speed_kph * CV.KPH_TO_MS
       ret.cruiseState.speedCluster = ret.cruiseState.speed
+      ret_sp.stockCruiseGap = self.cruise_hud.gap_level
       ret.blockPcmEnable = self.block_hud_enable
     else:
       ret.cruiseState.enabled = cp.vl["CruiseInfo"]["CruiseOn"] == 1
