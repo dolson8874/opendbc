@@ -39,3 +39,25 @@ class TestMasterCompatibility(unittest.TestCase):
     self.assertFalse(state.rightBlindspot)
     with structs.CarState.from_bytes(state.to_bytes()) as restored:
       self.assertEqual(restored.deprecated.brake, 37)
+
+  def test_yaw_rate_estimate_from_defender_can(self):
+    packer = CANPacker("landrover_defender_2023")
+    for speed_kph, angle_deg, gear, yaw_rad_s in (
+      (72, 8, 3, 0.03980),
+      (72, -8, 3, -0.03980),
+      (18, 8, 3, 0.01199),
+      (18, 8, 1, -0.01199),
+      (0, 45, 3, 0.0),
+    ):
+      with self.subTest(speed=speed_kph, angle=angle_deg, gear=gear):
+        ci = self.get_interface()
+        ci.update([])  # Register the signals used by the lazy CAN parser.
+        wheel_speeds = {"SpeedLeft": speed_kph, "SpeedRight": speed_kph}
+        messages = [
+          packer.make_can_msg("WheelSpeedFront", 0, wheel_speeds),
+          packer.make_can_msg("WheelSpeedRear", 0, wheel_speeds),
+          packer.make_can_msg("SWM_Angle", 0, {"SteerAngle": angle_deg}),
+          packer.make_can_msg("GearPRND", 0, {"PRND": gear}),
+        ]
+        state, _ = ci.update([(1_000_000_000, messages)])
+        self.assertAlmostEqual(state.yawRate, yaw_rad_s, places=5)

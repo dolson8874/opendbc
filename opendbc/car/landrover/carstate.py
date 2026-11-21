@@ -6,6 +6,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
 from opendbc.car.landrover import cruise_hud
 from opendbc.car.landrover.values import DBC, CanBus, CarControllerParams, LandroverFlags
+from opendbc.car.vehicle_model import VehicleModel
 from opendbc.safety import ALTERNATIVE_EXPERIENCE
 from opendbc.sunnypilot.car.landrover.mads import MadsCarState
 
@@ -20,6 +21,7 @@ class CarState(CarStateBase, MadsCarState):
 
     if CP.flags & LandroverFlags.FLEXRAY_HARNESS:
       self.shifter_values = can_define.dv["GearPRND"]["PRND"]
+      self.VM = VehicleModel(CP)
     else:
       self.shifter_values = can_define.dv["GEAR_PRND"]["GEAR_SHIFT"]
 
@@ -158,11 +160,6 @@ class CarState(CarStateBase, MadsCarState):
     ret.steeringAngleDeg = cp.vl["SWM_Angle"]["SteerAngle"]
     ret.steeringRateDeg = cp.vl["SWM_Angle"]["SteerRate"]  # TODO
 
-    steer_rad = math.radians(ret.steeringAngleDeg)
-    yawrate_rad_s = math.tan(steer_rad) * ret.vEgo / self.wheelbase
-
-    ret.yawRate = math.degrees(yawrate_rad_s)
-
     # TODO torq TorqEPS Pressed
     ret.steeringTorque = cp.vl["SWM_Torque"]["TorqueDriver"]
     ret.steeringTorqueEps = cp.vl["PSCM_Out"]["AngleTorque"]
@@ -172,6 +169,12 @@ class CarState(CarStateBase, MadsCarState):
 
     gear = cp.vl["GearPRND"]["PRND"]
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
+
+    # Estimate yaw in rad/s using the nominal vehicle model. Positive is left in forward drive.
+    yaw_speed = 0.0 if ret.standstill else max(ret.vEgo, 0.0)
+    if ret.gearShifter == structs.CarState.GearShifter.reverse:
+      yaw_speed = -yaw_speed
+    ret.yawRate = self.VM.yaw_rate(math.radians(ret.steeringAngleDeg), yaw_speed, roll=0.0)
 
     ret.deprecated.brake = cp.vl["Info02"]["BrakePedalPos"]
     ret.brakePressed = cp.vl["StopAndGo"]["BrakeDriver"] == 1
