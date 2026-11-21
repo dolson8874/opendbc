@@ -163,7 +163,7 @@ BO_ 399 BlindSpot: 8 pt
 BO_ 496 LKAS_OP_TO_FLEXRAY: 8 comma
  SG_ Lkas_checksum : 7|8@0+ (1,0) [0|255] "" XXX
  SG_ counter : 15|8@0+ (1,0) [0|255] "" XXX
- SG_ ReqAngleTorque : 29|14@0+ (0.09,-810) [-500|500] "deg" XXX
+ SG_ ReqAngleTorque : 29|14@0+ (0.085,-765) [-500|500] "deg" XXX
  SG_ EnAngle : 31|1@0+ (1,0) [0|1] "" XXX
  SG_ Engaged : 55|1@0+ (1,0) [0|1] "" XXX
 

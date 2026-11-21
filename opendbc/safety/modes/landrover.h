@@ -2,9 +2,12 @@
 
 #include "opendbc/safety/declarations.h"
 
-// LKAS_OP_TO_FLEXRAY.ReqAngleTorque uses 0.09 degrees per count, centered at 9000.
-#define FLEXRAY_DEG_TO_CAN (100.0F / 9.0F)
-#define FLEXRAY_MAX_ANGLE 1000  // 90 degrees in request counts
+// Host LKAS_OP_TO_FLEXRAY.ReqAngleTorque calibration: 0.085 degrees per count (17/200).
+#define FLEXRAY_ANGLE_SCALE_NUM 17
+#define FLEXRAY_ANGLE_SCALE_DEN 200
+#define FLEXRAY_DEG_TO_CAN ((float)FLEXRAY_ANGLE_SCALE_DEN / (float)FLEXRAY_ANGLE_SCALE_NUM)
+#define FLEXRAY_ANGLE_NEUTRAL 9000
+#define FLEXRAY_MAX_ANGLE (90 * FLEXRAY_ANGLE_SCALE_DEN / FLEXRAY_ANGLE_SCALE_NUM)
 //#define FLEXRAY_USE_PSCM_OUT 1
 
 static bool landrover_flexray_harness = true;
@@ -104,16 +107,15 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
         int angle_raw = (((msg->data[3] & 0x3FU) << 8) | msg->data[4]);
 
         // Convert SWM's 0.1 degree counts to request counts.
-        int angle_meas_new = ((angle_raw - 7800) * 10) / 9;
+        int angle_meas_new = ((angle_raw - 7800) * FLEXRAY_ANGLE_SCALE_DEN) / (10 * FLEXRAY_ANGLE_SCALE_NUM);
         update_sample(&angle_meas, angle_meas_new);
       }
       #else
 
-      // PSCM_Out.AngleTorque uses the same scale and center as the request.
+      // The optional PSCM_Out path retains its legacy 0.09 degree interpretation.
       if (msg->addr == 0x32U) {
-        // Store it 1/10 deg to match steering request
         unsigned int raw_val = (((msg->data[2] & 0x3FU) << 8) | msg->data[3]);
-        int angle_meas_new = (int)raw_val - 9000;
+        int angle_meas_new = (((int)raw_val - 9000) * 9 * FLEXRAY_ANGLE_SCALE_DEN) / (100 * FLEXRAY_ANGLE_SCALE_NUM);
         update_sample(&angle_meas, angle_meas_new);
       }
       #endif
@@ -218,7 +220,7 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
       tx = false;
     } else {
       unsigned int raw_angle_can = ((msg->data[3] & 0x3FU) << 8) | msg->data[4];
-      int desired_angle = (int)raw_angle_can - 9000;
+      int desired_angle = (int)raw_angle_can - FLEXRAY_ANGLE_NEUTRAL;
       bool steer_control_enabled = GET_BIT(msg, 31U) == 1;
       if (steer_control_enabled) {
         bool steering_input_valid = true;

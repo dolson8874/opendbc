@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from opendbc.car.lateral import get_max_angle_delta_vm, get_max_angle_vm
-from opendbc.car.landrover.landrovercan import create_lkas_command_defender
+from opendbc.car.landrover.landrovercan import create_lkas_command_defender, defender_crc
 from opendbc.car.structs import CarParams
 from opendbc.car.vehicle_model import VehicleModel
 from opendbc.car.landrover.values import CarControllerParams, LandroverFlags
@@ -29,7 +29,7 @@ class TestLandroverSafety(common.CarSafetyTest, common.AngleSteeringSafetyTest):
 
   # Angle control limits
   STEER_ANGLE_MAX = 90  # deg
-  DEG_TO_CAN = 100 / 9
+  DEG_TO_CAN = 200 / 17
 
   ANGLE_RATE_BP = [0.0, 5.0, 25.0]
   ANGLE_RATE_UP = [2.5, 1.5, 0.2]  # windup limit
@@ -105,17 +105,29 @@ class TestLandroverSafety(common.CarSafetyTest, common.AngleSteeringSafetyTest):
         self.safety.set_controls_allowed(controls_allowed)
         address, data, bus = create_lkas_command_defender(self.packer, controls_allowed, False, angle, 0)
         self.assertTrue(self._tx(libsafety_py.make_CANPacket(address, bus, data)))
-        for wrong_angle in (-0.09, 0.09, angle or 10):
+        for wrong_angle in (-0.085, 0.085, angle or 10):
           self.assertFalse(self._tx(self._angle_cmd_msg(wrong_angle, False)))
       self.safety.set_controls_allowed(False)
       self.assertFalse(self._tx(self._angle_cmd_msg(angle, True)))
 
+  def test_lkas_request_encoding(self):
+    for angle, expected_raw in ((-17.0, 8800), (-0.085, 8999), (0.0, 9000), (0.085, 9001), (17.0, 9200)):
+      with self.subTest(angle=angle):
+        address, data, bus = create_lkas_command_defender(self.packer, True, True, angle, 42)
+        self.assertEqual((address, bus), (MSG_LKAS_C2F, 1))
+        self.assertEqual(((data[3] & 0x3F) << 8) | data[4], expected_raw)
+        self.assertEqual(data[0], defender_crc(data[1:5]))
+
   def test_activation_after_neutral_uses_measured_angle(self):
-    self._reset_speed_measurement(15)
-    self._reset_angle_measurement(10)
-    self.safety.set_controls_allowed_lateral(True)
-    self.assertTrue(self._tx(self._angle_cmd_msg(0, False)))
-    self.assertTrue(self._tx(self._angle_cmd_msg(10, True)))
+    self._reset_speed_measurement(25)
+    for angle, expected_counts in ((-17.0, -200), (17.0, 200)):
+      with self.subTest(angle=angle):
+        self._reset_angle_measurement(angle)
+        self.assertEqual(self.safety.get_angle_meas_min(), expected_counts)
+        self.assertEqual(self.safety.get_angle_meas_max(), expected_counts)
+        self.safety.set_controls_allowed_lateral(True)
+        self.assertTrue(self._tx(self._angle_cmd_msg(0, False)))
+        self.assertTrue(self._tx(self._angle_cmd_msg(angle, True)))
 
   def test_lateral_only_controls(self):
     self.safety.set_controls_allowed(False)
