@@ -40,6 +40,20 @@ class TestMasterCompatibility(unittest.TestCase):
     with structs.CarState.from_bytes(state.to_bytes()) as restored:
       self.assertEqual(restored.deprecated.brake, 37)
 
+  def test_defender_driver_torque_polarity(self):
+    ci = self.get_interface()
+    ci.update([])
+    timestamp = 1_000_000_000
+    for magnitude, flags, expected in ((70, 0x00, 70), (70, 0x40, -70), (128, 0x80, 128),
+                                       (128, 0xC0, -128), (40, 0x40, -40), (0, 0x40, 0)):
+      with self.subTest(magnitude=magnitude, flags=flags):
+        for counter in range(10):
+          timestamp += 20_000_000
+          frame = (0x2E, bytes((0, flags | counter, 0, magnitude)), 0)
+          state, _ = ci.update([(timestamp, [frame])])
+        self.assertEqual(state.steeringTorque, expected)
+        self.assertEqual(state.steeringPressed, magnitude > 40)
+
   def test_yaw_rate_estimate_from_defender_can(self):
     packer = CANPacker("landrover_defender_2023")
     for speed_kph, angle_deg, gear, yaw_rad_s in (

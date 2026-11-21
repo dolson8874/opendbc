@@ -160,8 +160,10 @@ class CarState(CarStateBase, MadsCarState):
     ret.steeringAngleDeg = cp.vl["SWM_Angle"]["SteerAngle"]
     ret.steeringRateDeg = cp.vl["SWM_Angle"]["SteerRate"]  # TODO
 
-    # TODO torq TorqEPS Pressed
-    ret.steeringTorque = cp.vl["SWM_Torque"]["TorqueDriver"]
+    # Defender WIP polarity hypothesis: CAN0 0x2E byte 1 bit 6 indicates rightward effort.
+    swm_torque = cp.vl["SWM_Torque"]
+    magnitude = swm_torque["TorqueDriver"]
+    ret.steeringTorque = -magnitude if swm_torque["NEW_SIGNAL_2"] else magnitude
     ret.steeringTorqueEps = cp.vl["PSCM_Out"]["AngleTorque"]
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > self.params.STEER_THRESHOLD, 5)
 
