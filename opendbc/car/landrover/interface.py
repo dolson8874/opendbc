@@ -27,7 +27,12 @@ class CarInterface(CarInterfaceBase):
     if ret.centerToFront == 0:
       ret.centerToFront = ret.wheelbase * 0.4
 
-    if candidate in (CAR.RANGEROVER_VOGUE_2017):
+    if candidate == CAR.RANGEROVER_VOGUE_2017:
+      # RR steering has no validated TICI Panda safety configuration yet.
+      ret.dashcamOnly = True
+      ret.alphaLongitudinalAvailable = False
+      ret.openpilotLongitudinalControl = False
+      ret.pcmCruise = True
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
       ret.steerActuatorDelay = 0.11
       ret.enableBsm = True
@@ -36,7 +41,10 @@ class CarInterface(CarInterfaceBase):
       ret.steerControlType = structs.CarParams.SteerControlType.angle
       ret.enableBsm = True
 
-    ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.landrover, ret.flags)]
+    if ret.dashcamOnly:
+      ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.noOutput)]
+    else:
+      ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.landrover, ret.flags)]
 
     return ret
 
@@ -45,6 +53,6 @@ class CarInterface(CarInterfaceBase):
                      car_fw: list[structs.CarParams.CarFw], alpha_long: bool, docs: bool) -> structs.CarParamsSP:
 
     stock_cp.enableBsm = True
-    stock_cp.radarUnavailable = False
+    stock_cp.radarUnavailable = candidate == CAR.RANGEROVER_VOGUE_2017
 
     return ret
