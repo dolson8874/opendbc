@@ -51,8 +51,10 @@ class CarState(CarStateBase, MadsCarState):
 
     ret.standstill = ret.vEgoRaw < 0.01
 
-    ret.steeringAngleDeg = cp.vl["EPS_01"]["STEER_ANGLE01"]
-    ret.steeringRateDeg = cp.vl["EPS_01"]["STEER_RATE01"]
+    eps_angle = cp.vl["EPS_01"]
+    ret.steeringAngleDeg = eps_angle["STEER_ANGLE01"]
+    rate = eps_angle["STEER_RATE01"]
+    ret.steeringRateDeg = -rate if eps_angle["STEER_RATE_NEGATIVE"] else rate
 
     ret.steeringTorque = cp.vl["EPS_04"]["STEER_TORQUE04"]
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > self.params.STEER_THRESHOLD, 5)
