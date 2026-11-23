@@ -1,3 +1,6 @@
+import binascii
+import codecs
+
 from opendbc.car.landrover.values import CanBus
 from opendbc.car.can_definitions import CanData
 
