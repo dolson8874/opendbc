@@ -87,9 +87,9 @@ BO_ 74 Eps01: 8 pt
 BO_ 86 SWM_Angle: 8 pt
  SG_ checksum : 7|8@0+ (1,0) [0|255] "" XXX
  SG_ counter : 11|4@0+ (1,0) [0|15] "" XXX
- SG_ NEW_SIGNAL_1 : 18|1@0+ (1,0) [0|1] "" XXX
- SG_ SteerAngle : 29|14@0+ (0.1,-780) [0|16383] "Deg" XXX
- SG_ SteerRate : 47|8@0+ (4,0) [0|255] "deg/s" XXX
+ SG_ SteerRateNegative : 18|1@0+ (1,0) [0|1] "" XXX
+ SG_ SteerAngle : 29|14@0+ (0.1,-780) [-780|858.3] "deg" XXX
+ SG_ SteerRate : 47|8@0+ (4,0) [0|1020] "deg/s" XXX
 
 BO_ 132 StopAndGo: 8 pt
  SG_ checksum : 7|8@0+ (1,0) [0|255] "" XXX
@@ -198,6 +198,8 @@ BO_ 655 DoorStatus: 8 pt
  SG_ RearLeftDoor : 28|1@0+ (1,0) [0|1] "" XXX
  SG_ RearRightDoor : 29|1@0+ (1,0) [0|1] "" XXX
 
+CM_ SG_ 74 SteerTorqueEPS "Legacy label. This field correlates with IMU yaw rate in recorded drives. The OEM meaning, scale, offset, and invalid values remain unverified.";
+CM_ SG_ 86 SteerRateNegative "When set, negate the SteerRate magnitude to match the direction of change of SteerAngle.";
 CM_ SG_ 264 SPORT_SELECTED "Sport indication. Interpret with PRND=3 and the low nibble of byte 3 equal to 8 (zero-based bytes). The bit alone does not determine PRND.";
 CM_ SG_ 264 SPORT_GEAR_DISPLAY_CODE "Display code. Use only in Sport with PRND=3 and both upper bits of byte 4 clear. Code 0 denotes Sport Auto in that context. The code does not measure the mechanically engaged gear.";
 CM_ BO_ 507 "FlexRay-derived cruise status sent to openpilot over CAN1.";

@@ -157,8 +157,10 @@ class CarState(CarStateBase, MadsCarState):
 
     ret.standstill = ret.vEgoRaw < 0.01
 
-    ret.steeringAngleDeg = cp.vl["SWM_Angle"]["SteerAngle"]
-    ret.steeringRateDeg = cp.vl["SWM_Angle"]["SteerRate"]  # TODO
+    swm_angle = cp.vl["SWM_Angle"]
+    ret.steeringAngleDeg = swm_angle["SteerAngle"]
+    steer_rate = swm_angle["SteerRate"]
+    ret.steeringRateDeg = -steer_rate if swm_angle["SteerRateNegative"] else steer_rate
 
     # Defender WIP polarity hypothesis: CAN0 0x2E byte 1 bit 6 indicates rightward effort.
     swm_torque = cp.vl["SWM_Torque"]

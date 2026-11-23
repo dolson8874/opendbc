@@ -54,6 +54,20 @@ class TestMasterCompatibility(unittest.TestCase):
         self.assertEqual(state.steeringTorque, expected)
         self.assertEqual(state.steeringPressed, magnitude > 40)
 
+  def test_defender_steering_rate_uses_separate_direction_bit(self):
+    ci = self.get_interface()
+    state, _ = ci.update([])
+    self.assertEqual(state.steeringRateDeg, 0)
+    for counter, (magnitude, flags, expected) in enumerate(
+      ((64, 0x00, 256), (64, 0x04, -256), (255, 0x80, 1020), (255, 0x84, -1020), (0, 0x04, 0)),
+      start=1,
+    ):
+      with self.subTest(magnitude=magnitude, flags=flags):
+        frame = (0x56, bytes((0, counter, flags, 0x1E, 0xC8, magnitude, 0, 0)), 0)
+        state, _ = ci.update([(1_000_000_000 + counter * 10_000_000, [frame])])
+        self.assertEqual(state.steeringAngleDeg, 8)
+        self.assertEqual(state.steeringRateDeg, expected)
+
   def test_yaw_rate_estimate_from_defender_can(self):
     packer = CANPacker("landrover_defender_2023")
     for speed_kph, angle_deg, gear, yaw_rad_s in (
