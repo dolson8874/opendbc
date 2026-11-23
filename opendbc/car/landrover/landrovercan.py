@@ -1,8 +1,5 @@
 from opendbc.car.landrover.values import CanBus
-from opendbc.car.landrover.lkas_crc_table import find_steer_torque
 from opendbc.car.can_definitions import CanData
-import binascii
-import codecs
 
 
 # crc8 poly=0x1d, xor=0xcc , 32bit
@@ -45,32 +42,18 @@ def create_lkas_hud(packer, left_line, right_line):
   return packer.make_can_msg("LKAS_STATUS", 0, values)
 
 
-# LKAS_COMMAND 0x28F (655) Lane-keeping signal to turn the wheel.
-def create_lkas_command(packer, lkas_run, frame, apply_steer):
-  counter = frame % 0x10
-  torque, crc = find_steer_torque(counter, apply_steer)
+# NEOKII RR2017 LKAS_RUN checksum, derived from the counter and torque word.
+RR_LKAS_PARITY_MASKS = (0x0D23, 0x1447, 0x2FAD, 0x5878, 0x3FD2, 0x75A4, 0x6748, 0x4091)
 
-  #values = {
-  #  "CHECKSUM": crc,
-  #  "ALLFFFF" : 0xffff,
-  #  "A1" : 1,
-  #  "HIGH_TORQ": 0,
-  #  "ALL11" : 3,
-  #  "COUNTER" : counter,
-  #  "STEER_TORQ": torque,
-  #  "LKAS_GREEN" : 1
-  #}
 
-  dat = [0xeb, 0xff, 0xff, 0xe4, 0x00, 0x70, 0x00, 0x00]
-
-  dat[0] = crc
-  dat[3] = (((counter << 3) | ((torque & 0x700) >> 8)) | 0x80)
-  dat[4] = torque & 0xFF
-
-  candat = binascii.hexlify(bytearray(dat))
-
-  #return packer.make_can_msg("LKAS_RUN", CanBus.UNDERBODY, values)
-  return CanData(0x28F,  codecs.decode(candat, 'hex'), CanBus.UNDERBODY)
+def create_rr_lkas_command(frame, torque):
+  encoded = 1024 - torque
+  high = 0x80 | ((frame % 16) << 3) | (encoded >> 8)
+  low = encoded & 0xFF
+  word = (high << 8) | low
+  checksum = sum(((word & mask).bit_count() & 1) << bit for bit, mask in enumerate(RR_LKAS_PARITY_MASKS))
+  payload = bytes((checksum, 0xFF, 0xFF, high, low, 0x70, 0, 0))
+  return CanData(0x28F, payload, CanBus.UNDERBODY)
 
 
 def create_lkas_command_defender(packer, enable, latActive, apply_angle, cnt):

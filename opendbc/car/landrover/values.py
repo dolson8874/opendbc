@@ -45,11 +45,11 @@ class CarControllerParams:
       self.STEER_STEP = 2  # 50 Hz
 
     elif CP.carFingerprint in (CAR.RANGEROVER_VOGUE_2017):
-      self.STEER_MAX = 500
-      self.STEER_DELTA_UP = 2
-      self.STEER_DELTA_DOWN = 3
-      self.STEER_DRIVER_ALLOWANCE = 20
-      self.STEER_DRIVER_MULTIPLIER = 2
+      self.STEER_MAX = 250
+      self.STEER_DELTA_UP = 3
+      self.STEER_DELTA_DOWN = 6
+      self.STEER_DRIVER_ALLOWANCE = 300
+      self.STEER_DRIVER_MULTIPLIER = 1
       self.STEER_DRIVER_FACTOR = 1
       self.STEER_THRESHOLD = 150
       self.STEER_STEP = 4  # 25 Hz
@@ -63,6 +63,7 @@ class CanBus:
 
 class LandroverFlags(IntFlag):
   FLEXRAY_HARNESS = 1
+  RANGE_ROVER_2017 = 1 << 15
 
 
 class Footnote(Enum):
@@ -159,7 +160,7 @@ class CAR(Platforms):
     [
       LandroverCarDocs("RANGEROVER VOGUE 2017"),
     ],
-    CarSpecs(mass=2500, wheelbase=2.922, steerRatio=16.5),
+    CarSpecs(mass=2500, wheelbase=2.922, steerRatio=16.5, tireStiffnessFactor=0.5371),
     wmis=(WMI.LANDROVER),
     lines={ModelLine.L405},
     years={ModelYear.H_2017},
@@ -196,7 +197,7 @@ FW_QUERY_CONFIG = FwQueryConfig(
 # 1D8#46950500000008BC
 # 3D4 800d0141e73ded00
 STATIC_MSGS = [
- (0x1D8, 0, 10, b'\x46\x95\x05\x05\x00\x00\x08\xbc'),
+ (0x1D8, 0, 4, b'\x46\x95\x05\x05\x00\x00\x08\xbc'),
 ]
 
 

@@ -7,9 +7,120 @@
 #define FLEXRAY_USE_PSCM_OUT 1
 
 static bool landrover_flexray_harness = true;
+static bool landrover_rr2017 = false;
+
+static RxCheck landrover_rr_rx_checks[] = {
+  {.msg = {{0x172, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
+  {.msg = {{0x1CB, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
+  {.msg = {{0x158, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
+  {.msg = {{0x156, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
+  {.msg = {{0x28F, 2, 8, 25U, .max_counter = 15U, .ignore_quality_flag = true}}},
+};
+
+static void landrover_rr_rx_hook(const CANPacket_t *msg) {
+  if (msg->bus == 0U) {
+    if (msg->addr == 0x172U) {
+      int raw_torque = ((msg->data[2] & 0x3U) << 8) | msg->data[3];
+      update_sample(&torque_driver, raw_torque * 4 - 2032);
+    }
+    if (msg->addr == 0x1CBU) {
+      int raw_speed = ((msg->data[1] & 0x7FU) << 8) | msg->data[2];
+      vehicle_moving = raw_speed != 0;
+      UPDATE_VEHICLE_SPEED(raw_speed * 0.0101 * KPH_TO_MS);
+    }
+    if (msg->addr == 0x158U) {
+      gas_pressed = msg->data[0] != 0U;
+    }
+    if (msg->addr == 0x156U) {
+      brake_pressed = GET_BIT(msg, 36U) != 0U;
+      pcm_cruise_check(GET_BIT(msg, 38U) != 0U);
+    }
+    if (brake_pressed || gas_pressed) {
+      controls_allowed = false;
+    }
+  }
+}
+
+static uint8_t landrover_rr_lkas_checksum(uint16_t word) {
+  static const uint16_t parity_masks[] = {0x0D23, 0x1447, 0x2FAD, 0x5878, 0x3FD2, 0x75A4, 0x6748, 0x4091};
+  uint8_t result = 0U;
+  for (uint8_t i = 0U; i < 8U; i++) {
+    uint32_t parity = word & parity_masks[i];
+    parity ^= parity >> 8;
+    parity ^= parity >> 4;
+    parity ^= parity >> 2;
+    parity ^= parity >> 1;
+    result |= (parity & 1U) << i;
+  }
+  return result;
+}
+
+static uint32_t landrover_get_checksum(const CANPacket_t *msg) {
+  return msg->data[0];
+}
+
+static uint32_t landrover_compute_checksum(const CANPacket_t *msg) {
+  uint16_t word = ((uint16_t)msg->data[3] << 8) | msg->data[4];
+  return landrover_rr_lkas_checksum(word);
+}
+
+static uint8_t landrover_get_counter(const CANPacket_t *msg) {
+  return (msg->data[3] >> 3) & 0xFU;
+}
+
+static bool landrover_rr_tx_hook(const CANPacket_t *msg) {
+  if (msg->addr == 0x1D8U) {
+    return (GET_BYTES(msg, 0, 4) == 0x05059546U) && (GET_BYTES(msg, 4, 4) == 0xBC080000U);
+  }
+  if (msg->addr == 0x3D4U) {
+    return (GET_BYTES(msg, 0, 4) == 0x41010D80U) && ((GET_BYTES(msg, 4, 4) & 0xFFFFC3FFU) == 0x00ED02E7U);
+  }
+
+  const TorqueSteeringLimits limits = {
+    .max_torque = 250,
+    // NEOKII limits torque at 100 Hz and transmits every fourth tick.
+    .max_rate_up = 12,
+    .max_rate_down = 24,
+    .max_rt_delta = 84,
+    .type = TorqueDriverLimited,
+    .driver_torque_allowance = 300,
+    .driver_torque_multiplier = 1,
+  };
+  uint16_t word = ((uint16_t)msg->data[3] << 8) | msg->data[4];
+  bool valid = ((msg->data[3] & 0x80U) != 0U) && (msg->data[1] == 0xFFU) && (msg->data[2] == 0xFFU) &&
+               (GET_BYTES(msg, 5, 3) == 0x70U) && (msg->data[0] == landrover_rr_lkas_checksum(word));
+  if (!valid) {
+    return false;
+  }
+
+  int torque = 1024 - (int)(word & 0x7FFU);
+  uint32_t now = microsecond_timer_get();
+  bool fresh = true;
+  for (uint8_t i = 0U; i < (sizeof(landrover_rr_rx_checks) / sizeof(landrover_rr_rx_checks[0])); i++) {
+    const RxCheck *check = &landrover_rr_rx_checks[i];
+    uint32_t deadline = 5000000U / check->msg[0].frequency;
+    fresh &= check->status.msg_seen && check->status.valid_checksum && check->status.valid_quality_flag &&
+             (check->status.wrong_counters < MAX_WRONG_COUNTERS) && (get_ts_elapsed(now, check->status.last_timestamp) <= deadline);
+  }
+  if (!fresh || brake_pressed || gas_pressed) {
+    controls_allowed = false;
+  }
+  if (torque == 0) {
+    // Neutral torque must be able to take effect immediately on disengagement.
+    desired_torque_last = 0;
+    if (!controls_allowed) {
+      rt_torque_last = 0;
+      ts_torque_check_last = now;
+    }
+    return true;
+  }
+  return controls_allowed && !steer_torque_cmd_checks(torque, 1, limits);
+}
 
 static void landrover_rx_hook(const CANPacket_t *msg) {
-  if (landrover_flexray_harness) {
+  if (landrover_rr2017) {
+    landrover_rr_rx_hook(msg);
+  } else if (landrover_flexray_harness) {
     if (msg->bus == 0U)  {
       #ifndef FLEXRAY_USE_PSCM_OUT
       // Steering angle: (0.1 * val) - 780 in deg.
@@ -69,6 +180,10 @@ static void landrover_rx_hook(const CANPacket_t *msg) {
 
 
 static bool landrover_tx_hook(const CANPacket_t *msg) {
+  if (landrover_rr2017) {
+    return landrover_rr_tx_hook(msg);
+  }
+
   bool tx = true;
 
   const AngleSteeringLimits LANDROVER_STEERING_LIMITS = {
@@ -123,16 +238,15 @@ static bool landrover_tx_hook(const CANPacket_t *msg) {
 
 
 static safety_config landrover_init(uint16_t param) {
-  const int LANDROVER_PARAM_FLEXRAY_HARNESS = 1;
+  const uint16_t flexray_param = 1U;
+  const uint16_t rr_param = 1U << 15;
 
-#ifdef _RR_2017_
   // CAN messages for RANGE ROVER 2017 camera
   static const CanMsg LANDROVER_TX_MSGS[] = {
      {0x28F, 0, 8, .check_relay = true},
      {0x3D4, 0, 8, .check_relay = true},
      {0x1D8, 0, 8, .check_relay = true},
   };
-#endif
 
   // CAN messages for OP to Flexray board
   // 0x1F0 = LkasCmd, 0x1F1 = ACC
@@ -141,16 +255,6 @@ static safety_config landrover_init(uint16_t param) {
      {0x1F9, 1, 8, .check_relay = false},
      {0x1BE, 0, 8, .check_relay = true, .disable_static_blocking = true}, // check for relay
   };
-
-#ifdef _RR_2017_
-  static RxCheck landrover_rr_rx_checks[] = {
-    {.msg = {{0xf2, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // EPS_01 (STEER_ANGLE01)
-   {.msg = {{0x1CB, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // SPEED_02  SPEED02
-    {.msg = {{0x158, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // ACCELATOR_DRIVER (ACCELATOR_DRIVER)
-    {.msg = {{0x156, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},    // CRUISE_CONTROL (DRIVER_BRAKE, CRUISE_ON)
-    {.msg = {{0x28F, 2, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // CAM msg LKAS_RUN
-  };
-#endif
 
   static RxCheck landrover_flexray_rx_checks[] = {
     {.msg = {{0x24, 0, 8, 15U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}, { 0 }, { 0 }}},   // LKAS_btn 
@@ -166,20 +270,23 @@ static safety_config landrover_init(uint16_t param) {
   };
 
 
-  landrover_flexray_harness = GET_FLAG(param, LANDROVER_PARAM_FLEXRAY_HARNESS);
+  landrover_flexray_harness = param == flexray_param;
+  landrover_rr2017 = param == rr_param;
 
-  safety_config ret;
-
-  //if (landrover_flexray_harness) {
-    ret = BUILD_SAFETY_CFG(landrover_flexray_rx_checks, LANDROVER_FLEXRAY_TX_MSGS);
-  //} else {
-  //  ret = BUILD_SAFETY_CFG(landrover_rr_rx_checks, LANDROVER_TX_MSGS);
-  //}
-  return ret;
+  if (landrover_rr2017) {
+    return BUILD_SAFETY_CFG(landrover_rr_rx_checks, LANDROVER_TX_MSGS);
+  }
+  if (landrover_flexray_harness) {
+    return BUILD_SAFETY_CFG(landrover_flexray_rx_checks, LANDROVER_FLEXRAY_TX_MSGS);
+  }
+  return (safety_config){0};
 }
 
 const safety_hooks landrover_hooks = {
   .init = landrover_init,
   .rx = landrover_rx_hook,
   .tx = landrover_tx_hook,
+  .get_checksum = landrover_get_checksum,
+  .compute_checksum = landrover_compute_checksum,
+  .get_counter = landrover_get_counter,
 };

@@ -97,4 +97,4 @@ legend = ["LAT_ACCEL_FACTOR", "MAX_LAT_ACCEL_MEASURED", "FRICTION"]
 
 # Land Rover Defender angle based controllers
 "LANDROVER_DEFENDER_2023"  = [3.0, 3.0, 0.01]
-"RANGEROVER_VOGUE_2017" = [3.0, 3.0, 0.01]
+"RANGEROVER_VOGUE_2017" = [3.1, 3.1, 0.0]

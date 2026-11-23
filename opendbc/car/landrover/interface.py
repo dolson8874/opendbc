@@ -2,7 +2,7 @@ from opendbc.car import get_safety_config, structs
 from opendbc.car.interfaces import CarInterfaceBase
 from opendbc.car.landrover.carcontroller import CarController
 from opendbc.car.landrover.carstate import CarState
-from opendbc.car.landrover.values import CAR
+from opendbc.car.landrover.values import CAR, LandroverFlags
 
 
 class CarInterface(CarInterfaceBase):
@@ -28,23 +28,20 @@ class CarInterface(CarInterfaceBase):
       ret.centerToFront = ret.wheelbase * 0.4
 
     if candidate == CAR.RANGEROVER_VOGUE_2017:
-      # RR steering has no validated TICI Panda safety configuration yet.
-      ret.dashcamOnly = True
+      ret.flags |= int(LandroverFlags.RANGE_ROVER_2017)
       ret.alphaLongitudinalAvailable = False
       ret.openpilotLongitudinalControl = False
       ret.pcmCruise = True
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
       ret.steerActuatorDelay = 0.11
+      ret.steerLimitTimer = 0.4
       ret.enableBsm = True
 
     elif candidate in (CAR.LANDROVER_DEFENDER_2023):
       ret.steerControlType = structs.CarParams.SteerControlType.angle
       ret.enableBsm = True
 
-    if ret.dashcamOnly:
-      ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.noOutput)]
-    else:
-      ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.landrover, ret.flags)]
+    ret.safetyConfigs = [get_safety_config(structs.CarParams.SafetyModel.landrover, ret.flags)]
 
     return ret
 

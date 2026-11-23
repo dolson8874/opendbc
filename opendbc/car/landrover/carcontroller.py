@@ -3,7 +3,7 @@ from opendbc.car.can_definitions import CanData
 from opendbc.car import Bus
 from opendbc.car.lateral import apply_std_steer_angle_limits, apply_driver_steer_torque_limits
 from opendbc.car.interfaces import CarControllerBase
-from opendbc.car.landrover.landrovercan import create_lkas_command_defender, create_hud_command_defender, create_lkas_command, create_lkas_hud
+from opendbc.car.landrover.landrovercan import create_lkas_command_defender, create_hud_command_defender, create_rr_lkas_command, create_lkas_hud
 from opendbc.car.landrover.values import CarControllerParams, LandroverFlags, STATIC_MSGS
 from opendbc.sunnypilot.car.landrover.mads import MadsCarController
 
@@ -84,6 +84,8 @@ class CarController(CarControllerBase, MadsCarController):
     self.lkascnt = 0
     self.lrflag = 0
     self.main_on_last = False
+    self.rr_acc_was_active = False
+    self.rr_lat_allowed = False
 
   def update(self, CC, CC_SP, CS, now_nanos):
     MadsCarController.update(self, CC, CC_SP, CS)
@@ -99,37 +101,42 @@ class CarController(CarControllerBase, MadsCarController):
     new_torque = int(round(actuators.torque * self.params.STEER_MAX))
     apply_torque = apply_driver_steer_torque_limits(new_torque, self.apply_torque_last, CS.out.steeringTorque, self.params)
 
-    if not CC.latActive:
+    rr = bool(self.CP.flags & LandroverFlags.RANGE_ROVER_2017)
+    lat_active = CC.latActive
+    if rr:
+      # Stock ACC enables RR lateral control. Brake and accelerator require a new ACC edge.
+      stock_active = CS.out.cruiseState.enabled
+      if not stock_active or CS.out.brakePressed or CS.out.gasPressed or not CS.out.canValid:
+        self.rr_lat_allowed = False
+      elif not self.rr_acc_was_active:
+        self.rr_lat_allowed = True
+      self.rr_acc_was_active = stock_active
+      lat_active = CC.latActive and self.rr_lat_allowed
+    if not lat_active:
       apply_torque = 0
 
     self.apply_torque_last = apply_torque
 
     can_sends = []
 
-    if self.CP.flags & LandroverFlags.FLEXRAY_HARNESS == 0:
+    if rr:
 
       if CS.out.leftBlinker or CS.out.rightBlinker:
         apply_torque = 0
         self.apply_torque_last = 0
 
-      for (addr, bus, _fr_step, vl) in STATIC_MSGS:
-         if (self.frame % 2 == 0):  # 50Hz
-           can_sends.append(CanData(addr, vl, bus))
+      for addr, bus, period, payload in STATIC_MSGS:
+        if self.frame % period == 2:
+          can_sends.append(CanData(addr, payload, bus))
 
-      if self.frame % 4 == 0:
-        can_sends.append(
-          create_lkas_command(
-             self.packer,
-             CC.latActive,
-             self.lkascnt,
-             int(apply_torque),
-             ))
+      if self.frame % self.params.STEER_STEP == 0:
+        can_sends.append(create_rr_lkas_command(self.lkascnt, apply_torque))
         self.lkascnt += 1
 
       # LaneInfo
       if (self.frame % 8 == 0):  # 8hz
         sys_warning, sys_state, left_lane, right_lane = process_hud_alert_rr(
-          main_on, CC.latActive, CS.out.leftBlindspot, CS.out.rightBlindspot, hud_control, self.frame
+          main_on, lat_active, CS.out.leftBlindspot, CS.out.rightBlindspot, hud_control, self.frame
           )
 
         if left_lane == 2 and right_lane == 2:
@@ -147,7 +154,7 @@ class CarController(CarControllerBase, MadsCarController):
              right_lane
              ))
 
-    else:
+    elif self.CP.flags & LandroverFlags.FLEXRAY_HARNESS:
       # FLEXRAY_HARNESS
       if self.frame % 2 == 0:
         # Angular rate limit based on speed
