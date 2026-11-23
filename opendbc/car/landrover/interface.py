@@ -10,6 +10,12 @@ class CarInterface(CarInterfaceBase):
   CarController = CarController
 
   @staticmethod
+  def configure_torque_tune(candidate: str, tune: structs.CarParams.LateralTuning, steering_angle_deadzone_deg: float = 0.0):
+    CarInterfaceBase.configure_torque_tune(candidate, tune, steering_angle_deadzone_deg)
+    if candidate == CAR.RANGEROVER_VOGUE_2017:
+      tune.torque.kp = 0.85
+
+  @staticmethod
   def _get_params(ret: structs.CarParams, candidate, fingerprint, car_fw, alpha_long, is_release, docs) -> structs.CarParams:
     ret.brand = "landrover"
 
@@ -32,7 +38,7 @@ class CarInterface(CarInterfaceBase):
       ret.alphaLongitudinalAvailable = False
       ret.openpilotLongitudinalControl = False
       ret.pcmCruise = True
-      CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
+      CarInterface.configure_torque_tune(candidate, ret.lateralTuning)
       ret.steerActuatorDelay = 0.11
       ret.steerLimitTimer = 0.4
       ret.enableBsm = True

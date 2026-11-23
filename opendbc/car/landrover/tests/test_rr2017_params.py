@@ -18,6 +18,22 @@ def test_rr2017_preserves_stock_acc_and_selects_rr_safety(alpha_long):
   assert cp.safetyConfigs[0].safetyParam == LandroverFlags.RANGE_ROVER_2017
 
 
+@pytest.mark.parametrize("reconfigure", [False, True])
+def test_rr2017_uses_platform_torque_gain(reconfigure):
+  candidate = CAR.RANGEROVER_VOGUE_2017
+  cp = CarInterface.get_non_essential_params(candidate)
+
+  if reconfigure:
+    CarInterface.configure_torque_tune(candidate, cp.lateralTuning)
+
+  tune = cp.lateralTuning.torque
+  assert tune.kp == pytest.approx(0.85)
+  assert tune.ki == pytest.approx(0.3)
+  assert tune.kf == pytest.approx(1.0)
+  assert tune.latAccelFactor == pytest.approx(3.1)
+  assert tune.friction == pytest.approx(0.0)
+
+
 @pytest.mark.parametrize("alpha_long", [False, True])
 def test_defender_retains_configuration(alpha_long):
   candidate = CAR.LANDROVER_DEFENDER_2023
