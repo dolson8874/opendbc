@@ -8,14 +8,48 @@
 
 static bool landrover_flexray_harness = true;
 static bool landrover_rr2017 = false;
+static bool landrover_rr_camera_seen = false;
+static bool landrover_rr_camera_progress = false;
+static uint8_t landrover_rr_camera_counter = 0U;
+static uint32_t landrover_rr_camera_words[2] = {0U, 0U};
+static uint32_t landrover_rr_camera_progress_ts = 0U;
+static const uint32_t LANDROVER_RR_CAMERA_TIMEOUT_US = 200000U;
 
 static RxCheck landrover_rr_rx_checks[] = {
   {.msg = {{0x172, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
   {.msg = {{0x1CB, 0, 8, 50U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
   {.msg = {{0x158, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
   {.msg = {{0x156, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
-  {.msg = {{0x28F, 2, 8, 25U, .max_counter = 15U, .ignore_quality_flag = true}}},
+  {.msg = {{0x28F, 2, 8, 25U, .ignore_counter = true, .ignore_quality_flag = true}}},
 };
+
+static void landrover_rr_camera_rx(const CANPacket_t *msg) {
+  const uint32_t now = microsecond_timer_get();
+  const uint8_t counter = (msg->data[3] >> 3) & 0xFU;
+  const uint32_t low = GET_BYTES(msg, 0, 4);
+  const uint32_t high = GET_BYTES(msg, 4, 4);
+  const bool expired = get_ts_elapsed(now, landrover_rr_camera_progress_ts) > LANDROVER_RR_CAMERA_TIMEOUT_US;
+
+  // The stock camera repeats each word. Repeats never refresh counter liveness.
+  if (landrover_rr_camera_seen && (counter == landrover_rr_camera_counter)) {
+    if (expired || (low != landrover_rr_camera_words[0]) || (high != landrover_rr_camera_words[1])) {
+      landrover_rr_camera_progress = false;
+      controls_allowed = false;
+    }
+    return;
+  }
+
+  const uint8_t expected = (landrover_rr_camera_counter + 1U) & 0xFU;
+  if (landrover_rr_camera_seen && (expired || (counter != expected))) {
+    controls_allowed = false;
+  }
+  landrover_rr_camera_progress = landrover_rr_camera_seen && (counter == expected);
+  landrover_rr_camera_seen = true;
+  landrover_rr_camera_counter = counter;
+  landrover_rr_camera_words[0] = low;
+  landrover_rr_camera_words[1] = high;
+  landrover_rr_camera_progress_ts = now;
+}
 
 static void landrover_rr_rx_hook(const CANPacket_t *msg) {
   if (msg->bus == 0U) {
@@ -38,6 +72,8 @@ static void landrover_rr_rx_hook(const CANPacket_t *msg) {
     if (brake_pressed || gas_pressed) {
       controls_allowed = false;
     }
+  } else if (msg->bus == 2U && msg->addr == 0x28FU) {
+    landrover_rr_camera_rx(msg);
   }
 }
 
@@ -62,10 +98,6 @@ static uint32_t landrover_get_checksum(const CANPacket_t *msg) {
 static uint32_t landrover_compute_checksum(const CANPacket_t *msg) {
   uint16_t word = ((uint16_t)msg->data[3] << 8) | msg->data[4];
   return landrover_rr_lkas_checksum(word);
-}
-
-static uint8_t landrover_get_counter(const CANPacket_t *msg) {
-  return (msg->data[3] >> 3) & 0xFU;
 }
 
 static bool landrover_rr_tx_hook(const CANPacket_t *msg) {
@@ -95,7 +127,8 @@ static bool landrover_rr_tx_hook(const CANPacket_t *msg) {
 
   int torque = 1024 - (int)(word & 0x7FFU);
   uint32_t now = microsecond_timer_get();
-  bool fresh = true;
+  bool fresh = landrover_rr_camera_progress &&
+               (get_ts_elapsed(now, landrover_rr_camera_progress_ts) <= LANDROVER_RR_CAMERA_TIMEOUT_US);
   for (uint8_t i = 0U; i < (sizeof(landrover_rr_rx_checks) / sizeof(landrover_rr_rx_checks[0])); i++) {
     const RxCheck *check = &landrover_rr_rx_checks[i];
     uint32_t deadline = 5000000U / check->msg[0].frequency;
@@ -272,6 +305,8 @@ static safety_config landrover_init(uint16_t param) {
 
   landrover_flexray_harness = param == flexray_param;
   landrover_rr2017 = param == rr_param;
+  landrover_rr_camera_seen = false;
+  landrover_rr_camera_progress = false;
 
   if (landrover_rr2017) {
     return BUILD_SAFETY_CFG(landrover_rr_rx_checks, LANDROVER_TX_MSGS);
@@ -288,5 +323,4 @@ const safety_hooks landrover_hooks = {
   .tx = landrover_tx_hook,
   .get_checksum = landrover_get_checksum,
   .compute_checksum = landrover_compute_checksum,
-  .get_counter = landrover_get_counter,
 };

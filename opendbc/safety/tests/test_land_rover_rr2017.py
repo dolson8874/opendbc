@@ -43,7 +43,7 @@ def test_acc_gate_and_pedal_release(rr, pedal):
   rx, _ = rr
   assert not tx(10)
   rx()
-  rx(acc=True, cam=False)
+  rx(acc=True)
   assert tx(-12)
   assert not tx(-25)
   assert tx(0)
@@ -111,4 +111,35 @@ def test_stock_camera_on_actuation_bus_latches_relay_malfunction(rr):
   libsafety.safety_rx_hook(make_CANPacket(address, bus, payload))
   assert libsafety.get_relay_malfunction()
   assert not tx(0)
+  assert not tx(12)
+
+
+def test_stock_camera_repeats_without_extending_counter_liveness(rr):
+  rx, _ = rr
+  rx()
+  rx(acc=True)
+  for now in (40_000, 80_000, 120_000):
+    libsafety.set_timer(now)
+    rx(acc=True, cam=False)
+    addr, data, _ = create_rr_lkas_command(1, 0)
+    assert libsafety.safety_rx_hook(make_CANPacket(addr, 2, data))
+    assert tx(12)
+  rx(acc=True)
+  assert tx(12)
+  for now in (160_000, 200_000, 240_000, 280_000, 320_000, 360_000):
+    libsafety.set_timer(now)
+    rx(acc=True, cam=False)
+    addr, data, _ = create_rr_lkas_command(2, 0)
+    assert libsafety.safety_rx_hook(make_CANPacket(addr, 2, data))
+  assert not tx(12)
+  assert tx(0)
+
+
+def test_repeated_camera_counter_with_changed_payload_disarms(rr):
+  rx, _ = rr
+  rx()
+  rx(acc=True)
+  assert tx(12)
+  addr, data, _ = create_rr_lkas_command(1, 1)
+  assert libsafety.safety_rx_hook(make_CANPacket(addr, 2, data))
   assert not tx(12)
