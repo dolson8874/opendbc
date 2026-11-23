@@ -325,6 +325,10 @@ void set_mads_params(bool enable_mads, bool disengage_lateral_on_brake, bool pau
   mads_set_alternative_experience(&alternative_experience);
 }
 
+void receive_rr2017_mads_heartbeat(bool engaged) {
+  landrover_rr_receive_heartbeat(engaged);
+}
+
 void set_heartbeat_engaged_mads(bool c){
   heartbeat_engaged_mads = c;
 }

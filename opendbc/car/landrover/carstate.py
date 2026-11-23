@@ -92,17 +92,12 @@ class CarState(CarStateBase, MadsCarState):
 
     ret.standstill = ret.vEgoRaw < 0.01
 
-    ret.steeringAngleDeg = cp.vl["EPS_01"]["STEER_ANGLE01"]
-    ret.steeringRateDeg = cp.vl["EPS_01"]["STEER_SPEED01"]
+    eps_angle = cp.vl["EPS_01"]
+    ret.steeringAngleDeg = eps_angle["STEER_ANGLE01"]
+    rate = eps_angle["STEER_RATE01"]
+    ret.steeringRateDeg = -rate if eps_angle["STEER_RATE_NEGATIVE"] else rate
 
-    steer_rad = math.radians(ret.steeringAngleDeg)
-    yawrate_rad_s = math.tan(steer_rad) * ret.vEgo / self.wheelbase
-
-    ret.yawRate = math.degrees(yawrate_rad_s)
-
-    # TODO torq TorqEPS Pressed
-    ret.steeringTorque = cp.vl["EPS_00"]["STEER_RATE00"]
-    ret.steeringTorqueEps = cp.vl["EPS_02"]["STEER_TORQUE_DRIVER02"]
+    ret.steeringTorque = cp.vl["EPS_04"]["STEER_TORQUE04"]
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > self.params.STEER_THRESHOLD, 5)
 
     ret.leftBlinker, ret.rightBlinker = self.update_blinker_from_lamp(50, cp.vl["TURN_SIGNAL"]['LEFT_BLINK'],cp.vl["TURN_SIGNAL"]['RIGHT_BLINK'])
@@ -225,5 +220,5 @@ class CarState(CarStateBase, MadsCarState):
 
     return {
       Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus.UNDERBODY),
-      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CanBus.CAM)
+      Bus.cam: CANParser(DBC[CP.carFingerprint][Bus.pt], [("LKAS_RUN", 25)], CanBus.CAM)
     }

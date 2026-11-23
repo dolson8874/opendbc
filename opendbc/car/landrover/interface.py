@@ -46,14 +46,17 @@ class CarInterface(CarInterfaceBase):
     if ret.centerToFront == 0:
       ret.centerToFront = ret.wheelbase * 0.4
 
-    """
-    if candidate in (CAR.RANGEROVER_VOGUE_2017):
+    if candidate == CAR.RANGEROVER_VOGUE_2017:
+      ret.flags |= int(LandroverFlags.RANGE_ROVER_2017)
+      ret.alphaLongitudinalAvailable = False
+      ret.openpilotLongitudinalControl = False
+      ret.pcmCruise = True
       CarInterfaceBase.configure_torque_tune(candidate, ret.lateralTuning)
       ret.steerActuatorDelay = 0.11
+      ret.steerLimitTimer = 0.4
       ret.deprecated.enableBsm = True
-    """
 
-    if candidate in (CAR.LANDROVER_DEFENDER_2023):
+    elif candidate in (CAR.LANDROVER_DEFENDER_2023):
       ret.steerControlType = structs.CarParams.SteerControlType.angle
       ret.deprecated.enableBsm = True
 
@@ -68,6 +71,6 @@ class CarInterface(CarInterfaceBase):
                      car_fw: list[structs.CarParams.CarFw], alpha_long: bool, is_release_sp: bool, docs: bool) -> structs.CarParamsSP:
 
     stock_cp.deprecated.enableBsm = True
-    stock_cp.radarUnavailable = False
+    stock_cp.radarUnavailable = candidate == CAR.RANGEROVER_VOGUE_2017
 
     return ret
