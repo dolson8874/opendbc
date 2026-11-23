@@ -2229,6 +2229,16 @@
     ],
     "package": "All"
   },
+  "Land Rover Range Rover Vogue 2017": {
+    "platform": "RANGEROVER_VOGUE_2017",
+    "make": "Land Rover",
+    "brand": "landrover",
+    "model": "Range Rover Vogue",
+    "year": [
+      "2017"
+    ],
+    "package": "All"
+  },
   "Lexus CT Hybrid 2017-18": {
     "platform": "LEXUS_CTH",
     "make": "Lexus",
@@ -2661,16 +2671,6 @@
       "2022"
     ],
     "package": "Adaptive Cruise Control (ACC)"
-  },
-  "RANGEROVER VOGUE 2017": {
-    "platform": "RANGEROVER_VOGUE_2017",
-    "make": "RANGEROVER",
-    "brand": "landrover",
-    "model": "VOGUE",
-    "year": [
-      "2017"
-    ],
-    "package": "All"
   },
   "Rivian R1S 2022-24": {
     "platform": "RIVIAN_R1_GEN1",

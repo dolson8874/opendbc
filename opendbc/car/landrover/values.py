@@ -79,6 +79,12 @@ class LandroverCarDocs(CarDocs):
   package: str = "All"
   car_parts: CarParts = field(default_factory=CarParts.common([CarHarness.custom]))
 
+  def __post_init__(self):
+    super().__post_init__()
+    if self.name.startswith("Land Rover "):
+      self.make = "Land Rover"
+      self.model = self.model.removeprefix("Rover ")
+
   def init_make(self, CP: CarParams):
     if CP.flags & LandroverFlags.FLEXRAY_HARNESS:
       self.footnotes.insert(0, Footnote.FLEXRAY)
@@ -158,7 +164,7 @@ class CAR(Platforms):
   )
   RANGEROVER_VOGUE_2017 = LandroverPlatformConfig(
     [
-      LandroverCarDocs("RANGEROVER VOGUE 2017"),
+      LandroverCarDocs("Land Rover Range Rover Vogue 2017"),
     ],
     CarSpecs(mass=2500, wheelbase=2.922, steerRatio=16.5, tireStiffnessFactor=0.5371),
     wmis=(WMI.LANDROVER),
