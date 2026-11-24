@@ -19,7 +19,7 @@ def rr(request):
   packer = CANPacker("landrover_rangerover_2017")
   counter = 0
 
-  def rx(*, acc=False, brake=False, pedal=0, driver=0, cam=True, gap=None):
+  def rx(*, acc=False, brake=False, pedal=0, driver=0, cam=True, gap=None, cancel=False):
     nonlocal counter
     signals = (
       ("EPS_04", {"STEER_TORQUE04": driver}),
@@ -29,6 +29,8 @@ def rr(request):
     )
     if gap is not None:
       signals = (("CR01", {"GAP": gap}), *signals)
+    if mads and cancel is not None:
+      signals = (*signals, ("CRUISE_ACC", {"CruiseCancelRequestCandidate": cancel}))
     for name, values in signals:
       addr, payload, bus = packer.make_can_msg(name, 0, values)
       assert libsafety.safety_rx_hook(make_CANPacket(addr, bus, payload))
@@ -153,48 +155,94 @@ def test_repeated_camera_counter_with_changed_payload_disarms(rr):
 
 
 @pytest.mark.parametrize("rr", [True], indirect=True)
-def test_mads_retains_steering_on_brake_and_acc_off_then_gap_four_disarms(rr):
-  rx, _ = rr
-  rx(acc=True, gap=0)
+@pytest.mark.parametrize("transition", ["brake", "cancel"])
+def test_mads_retains_steering_with_gap_four_and_cancel_disarms_after_acc_off(rr, transition):
+  rx, packer = rr
+  rx(acc=True, gap=2)
   assert not tx(10)  # No observed ACC-off state since startup.
-  rx(gap=0)
-  rx(acc=True, gap=0)
-  assert tx(10)
-  rx(brake=True, gap=0)
-  assert tx(10)
-  rx(gap=0)
-  assert tx(10)
   rx(gap=2)
+  rx(acc=True, gap=2)
+  assert tx(10)
+
+  libsafety.set_timer(70_000)
+  rx(acc=True, brake=transition == "brake", gap=2, cancel=transition == "cancel")
+  assert tx(10)
+  libsafety.set_timer(140_000)
+  rx(gap=2, brake=transition == "brake", cancel=transition == "cancel")
+  assert tx(10)
+  libsafety.set_timer(210_000)
+  rx(gap=0, cancel=transition == "cancel")
+  assert tx(10)
+  libsafety.set_timer(280_000)
+  rx(gap=2)
+  assert tx(10)
+  addr, payload, _ = packer.make_can_msg("CRUISE_ACC", 2, {"CruiseCancelRequestCandidate": 1})
+  assert libsafety.safety_rx_hook(make_CANPacket(addr, 2, payload))
+  assert tx(10)
+
+  libsafety.set_timer(350_000)
+  rx(gap=2, cancel=True)
+  assert not libsafety.get_controls_allowed_lateral()
   assert not tx(10)
   assert tx(0)
   rx(gap=0)
+  libsafety.receive_rr2017_mads_heartbeat(True)
   assert not tx(10)
-  rx(acc=True, gap=0)
+  rx(acc=True, gap=2)
   assert tx(10)
-  libsafety.set_heartbeat_engaged_mads(False)
+
+
+@pytest.mark.parametrize("rr", [True], indirect=True)
+def test_mads_first_cancel_when_acc_off_just_arrived_does_not_disarm(rr):
+  rx, _ = rr
+  rx(gap=2)
+  rx(gap=2)  # Require a progressing camera counter before starting ACC.
+  rx(acc=True, gap=2)
+  assert tx(10)
+  libsafety.set_timer(70_000)
+  rx(gap=2, cancel=True)
+  assert tx(10)  # ACC OFF and CANCEL in the same batch.
+  for now in (140_000, 210_000):
+    libsafety.set_timer(now)
+    rx(gap=2, cancel=True)
+    assert tx(10)  # Holding past the OFF confirmation window is not a new press.
+
+
+@pytest.mark.parametrize("rr", [True], indirect=True)
+def test_mads_gap_four_allows_engagement_and_lost_camera_or_gas_disarms(rr):
+  rx, _ = rr
+  rx(gap=2)
+  rx(gap=2)  # Require a progressing camera counter before starting ACC.
+  rx(acc=True, gap=2)
+  assert tx(10)
+  rx(gap=2, pedal=1)
+  assert not tx(10)
+  rx(gap=2)
+  assert not tx(10)
+  rx(acc=True, gap=2)
+  assert tx(10)
+  libsafety.set_timer(210_001)
+  assert not tx(10)
+  rx(acc=True, gap=2)
   assert not tx(10)
 
 
 @pytest.mark.parametrize("rr", [True], indirect=True)
-def test_mads_gap_four_blocks_engagement_and_lost_camera_or_gas_disarms(rr):
+def test_mads_stale_cancel_input_disarms_even_with_other_inputs_fresh(rr):
   rx, _ = rr
   rx(gap=2)
+  rx(gap=2)  # Require a progressing camera counter before starting ACC.
   rx(acc=True, gap=2)
-  assert not tx(10)
-  rx(acc=True, gap=0)
-  assert not tx(10)  # Changing gaps does not re-arm when ACC is still on.
-  rx(gap=0)
-  rx(acc=True, gap=0)
   assert tx(10)
-  rx(gap=0, pedal=1)
+  for now in (70_000, 140_000, 210_000, 280_000, 350_000):
+    libsafety.set_timer(now)
+    rx(gap=2, cancel=None)
+    assert tx(10)
+  libsafety.set_timer(360_000)
+  rx(gap=2, cancel=None)
   assert not tx(10)
-  rx(gap=0)
-  assert not tx(10)
-  rx(acc=True, gap=0)
-  assert tx(10)
-  libsafety.set_timer(210_001)
-  assert not tx(10)
-  rx(acc=True, gap=0)
+  assert tx(0)
+  rx(gap=2, cancel=True)
   assert not tx(10)
 
 

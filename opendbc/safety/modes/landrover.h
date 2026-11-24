@@ -21,9 +21,18 @@ static uint32_t landrover_rr_heartbeat_ts = 0U;
 // The host normally sends a heartbeat every 100 ms.
 static const uint32_t LANDROVER_RR_HEARTBEAT_TIMEOUT_US = 500000U;
 static bool landrover_rr_gap_seen = false;
-static bool landrover_rr_gap_is_four = false;
 static uint32_t landrover_rr_gap_ts = 0U;
 static const uint32_t LANDROVER_RR_GAP_TIMEOUT_US = 400000U;
+// Match the RR2017 host button parser. Hold the first CANCEL in the ACC domain.
+static const uint32_t LANDROVER_RR_ACC_FRESH_US = 100000U;
+static const uint32_t LANDROVER_RR_ACC_OFF_CONFIRM_US = 100000U;
+static const uint32_t LANDROVER_RR_CANCEL_TIMEOUT_US = 400000U;
+static bool landrover_rr_acc_fresh_seen = false;
+static bool landrover_rr_acc_off = false;
+static uint32_t landrover_rr_acc_off_since_ts = 0U;
+static uint32_t landrover_rr_acc_ts = 0U;
+static bool landrover_rr_cancel_armed = false;
+static uint32_t landrover_rr_cancel_ts = 0U;
 static bool landrover_rr_camera_seen = false;
 static bool landrover_rr_camera_progress = false;
 static uint8_t landrover_rr_camera_counter = 0U;
@@ -37,12 +46,13 @@ static RxCheck landrover_rr_rx_checks[] = {
   {.msg = {{0x158, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
   {.msg = {{0x156, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
   {.msg = {{0x28F, 2, 8, 25U, .ignore_counter = true, .ignore_quality_flag = true}}},
-  // Gap status is required only in the explicitly selected RR MADS safety profile.
+  // Gap status and the driver CANCEL input are required only in the RR MADS profile.
   {.msg = {{0x2F0, 0, 8, 12U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
+  {.msg = {{0x2D0, 0, 8, 14U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
 };
 
 static bool landrover_rr_gap_allows_mads(uint32_t now) {
-  return landrover_rr_gap_seen && !landrover_rr_gap_is_four &&
+  return landrover_rr_gap_seen &&
          (safety_get_ts_elapsed(now, landrover_rr_gap_ts) <= LANDROVER_RR_GAP_TIMEOUT_US);
 }
 
@@ -106,6 +116,24 @@ static void landrover_rr_camera_rx(const CANPacket_t *msg) {
   landrover_rr_camera_progress_ts = now;
 }
 
+static void landrover_rr_update_cancel(const CANPacket_t *msg, uint32_t now) {
+  if (safety_get_ts_elapsed(now, landrover_rr_cancel_ts) >= LANDROVER_RR_CANCEL_TIMEOUT_US) {
+    landrover_rr_cancel_armed = false;
+  }
+  landrover_rr_cancel_ts = now;
+  if (GET_BIT(msg, 17U) == 0U) {
+    landrover_rr_cancel_armed = true;
+  } else if (landrover_rr_cancel_armed) {
+    landrover_rr_cancel_armed = false;
+    if (controls_allowed_lateral && landrover_rr_acc_fresh_seen && landrover_rr_acc_off &&
+        (safety_get_ts_elapsed(now, landrover_rr_acc_ts) <= LANDROVER_RR_ACC_FRESH_US) &&
+        (safety_get_ts_elapsed(now, landrover_rr_acc_off_since_ts) >= LANDROVER_RR_ACC_OFF_CONFIRM_US)) {
+      controls_allowed = false;
+      landrover_rr_disarm_mads();
+    }
+  }
+}
+
 static void landrover_rr_rx_hook(const CANPacket_t *msg) {
   const uint32_t now = microsecond_timer_get();
   landrover_rr_expire_heartbeat(now);
@@ -125,14 +153,24 @@ static void landrover_rr_rx_hook(const CANPacket_t *msg) {
     if (landrover_rr_mads && (msg->addr == 0x2F0U)) {
       landrover_rr_gap_seen = true;
       landrover_rr_gap_ts = now;
-      // The factory setting is encoded as 0, 1, 2, 3 = display 3, 2, 4, 1.
-      landrover_rr_gap_is_four = ((msg->data[7] >> 6) == 2U);
+    }
+    if (landrover_rr_mads && (msg->addr == 0x2D0U)) {
+      landrover_rr_update_cancel(msg, now);
     }
     if (msg->addr == 0x156U) {
       brake_pressed = GET_BIT(msg, 36U) != 0U;
       const bool acc_on = GET_BIT(msg, 38U) != 0U;
       if (!acc_on) {
         landrover_rr_acc_off_seen = true;
+      }
+      if (landrover_rr_mads) {
+        if (!landrover_rr_acc_fresh_seen || !landrover_rr_acc_off ||
+            (safety_get_ts_elapsed(now, landrover_rr_acc_ts) > LANDROVER_RR_ACC_FRESH_US)) {
+          landrover_rr_acc_off_since_ts = now;
+        }
+        landrover_rr_acc_fresh_seen = true;
+        landrover_rr_acc_off = !acc_on;
+        landrover_rr_acc_ts = now;
       }
       pcm_cruise_check(acc_on);
       if (landrover_rr_mads && (!landrover_rr_acc_off_seen || !landrover_rr_camera_progress)) {
@@ -205,7 +243,7 @@ static bool landrover_rr_tx_hook(const CANPacket_t *msg) {
   bool fresh = landrover_rr_camera_progress &&
                (safety_get_ts_elapsed(now, landrover_rr_camera_progress_ts) <= LANDROVER_RR_CAMERA_TIMEOUT_US);
   const uint8_t check_count = (uint8_t)(sizeof(landrover_rr_rx_checks) / sizeof(landrover_rr_rx_checks[0])) -
-                              (landrover_rr_mads ? 0U : 1U);
+                              (landrover_rr_mads ? 0U : 2U);
   for (uint8_t i = 0U; i < check_count; i++) {
     const RxCheck *check = &landrover_rr_rx_checks[i];
     uint32_t deadline = 5000000U / check->msg[0].frequency;
@@ -529,14 +567,16 @@ static safety_config landrover_init(uint16_t param) {
   landrover_rr_acc_off_seen = false;
   landrover_rr_heartbeat_seen = false;
   landrover_rr_gap_seen = false;
-  landrover_rr_gap_is_four = false;
+  landrover_rr_acc_fresh_seen = false;
+  landrover_rr_acc_off = false;
+  landrover_rr_cancel_armed = false;
   landrover_rr_camera_seen = false;
   landrover_rr_camera_progress = false;
 
   if (landrover_rr2017) {
     safety_config config = BUILD_SAFETY_CFG(landrover_rr_rx_checks, LANDROVER_TX_MSGS);
     if (!landrover_rr_mads) {
-      config.rx_checks_len -= 1;
+      config.rx_checks_len -= 2;  // Gap and CANCEL belong to the RR MADS profile.
     }
     mads_set_alternative_experience(&alternative_experience);
     if (landrover_rr_mads) {
