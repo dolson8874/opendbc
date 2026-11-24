@@ -20,9 +20,6 @@ static bool landrover_rr_heartbeat_seen = false;
 static uint32_t landrover_rr_heartbeat_ts = 0U;
 // The host normally sends a heartbeat every 100 ms.
 static const uint32_t LANDROVER_RR_HEARTBEAT_TIMEOUT_US = 500000U;
-static bool landrover_rr_gap_seen = false;
-static uint32_t landrover_rr_gap_ts = 0U;
-static const uint32_t LANDROVER_RR_GAP_TIMEOUT_US = 400000U;
 // Match the RR2017 host button parser. Hold the first CANCEL in the ACC domain.
 static const uint32_t LANDROVER_RR_ACC_FRESH_US = 100000U;
 static const uint32_t LANDROVER_RR_ACC_OFF_CONFIRM_US = 100000U;
@@ -46,15 +43,9 @@ static RxCheck landrover_rr_rx_checks[] = {
   {.msg = {{0x158, 0, 8, 100U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
   {.msg = {{0x156, 0, 8, 25U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
   {.msg = {{0x28F, 2, 8, 25U, .ignore_counter = true, .ignore_quality_flag = true}}},
-  // Gap status and the driver CANCEL input are required only in the RR MADS profile.
-  {.msg = {{0x2F0, 0, 8, 12U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
+  // The driver CANCEL input is required only in the RR MADS profile.
   {.msg = {{0x2D0, 0, 8, 14U, .ignore_checksum = true, .ignore_counter = true, .ignore_quality_flag = true}}},
 };
-
-static bool landrover_rr_gap_allows_mads(uint32_t now) {
-  return landrover_rr_gap_seen &&
-         (safety_get_ts_elapsed(now, landrover_rr_gap_ts) <= LANDROVER_RR_GAP_TIMEOUT_US);
-}
 
 static void landrover_rr_disarm_mads(void) {
   if (landrover_rr_mads) {
@@ -150,10 +141,6 @@ static void landrover_rr_rx_hook(const CANPacket_t *msg) {
     if (msg->addr == 0x158U) {
       gas_pressed = msg->data[0] != 0U;
     }
-    if (landrover_rr_mads && (msg->addr == 0x2F0U)) {
-      landrover_rr_gap_seen = true;
-      landrover_rr_gap_ts = now;
-    }
     if (landrover_rr_mads && (msg->addr == 0x2D0U)) {
       landrover_rr_update_cancel(msg, now);
     }
@@ -180,7 +167,7 @@ static void landrover_rr_rx_hook(const CANPacket_t *msg) {
     if (brake_pressed || gas_pressed) {
       controls_allowed = false;
     }
-    if (landrover_rr_mads && (gas_pressed || !landrover_rr_gap_allows_mads(now))) {
+    if (landrover_rr_mads && gas_pressed) {
       controls_allowed = false;
       landrover_rr_disarm_mads();
     }
@@ -243,14 +230,14 @@ static bool landrover_rr_tx_hook(const CANPacket_t *msg) {
   bool fresh = landrover_rr_camera_progress &&
                (safety_get_ts_elapsed(now, landrover_rr_camera_progress_ts) <= LANDROVER_RR_CAMERA_TIMEOUT_US);
   const uint8_t check_count = (uint8_t)(sizeof(landrover_rr_rx_checks) / sizeof(landrover_rr_rx_checks[0])) -
-                              (landrover_rr_mads ? 0U : 2U);
+                              (landrover_rr_mads ? 0U : 1U);
   for (uint8_t i = 0U; i < check_count; i++) {
     const RxCheck *check = &landrover_rr_rx_checks[i];
     uint32_t deadline = 5000000U / check->msg[0].frequency;
     fresh &= check->status.msg_seen && check->status.valid_checksum && check->status.valid_quality_flag &&
              (check->status.wrong_counters < MAX_WRONG_COUNTERS) && (safety_get_ts_elapsed(now, check->status.last_timestamp) <= deadline);
   }
-  if (!fresh || gas_pressed || (landrover_rr_mads && !landrover_rr_gap_allows_mads(now))) {
+  if (!fresh || gas_pressed) {
     controls_allowed = false;
     landrover_rr_disarm_mads();
   }
@@ -258,8 +245,8 @@ static bool landrover_rr_tx_hook(const CANPacket_t *msg) {
     controls_allowed = false;
   }
   const bool lateral_allowed = landrover_rr_mads ?
-                               (fresh && vehicle_moving && heartbeat_engaged_mads &&
-                                landrover_rr_gap_allows_mads(now) && !gas_pressed && (m_mads_state.system_enabled && controls_allowed_lateral)) :
+                               (fresh && vehicle_moving && heartbeat_engaged_mads && !gas_pressed &&
+                                m_mads_state.system_enabled && controls_allowed_lateral) :
                                controls_allowed;
   if (torque == 0) {
     // Neutral torque must be able to take effect immediately on disengagement.
@@ -566,7 +553,6 @@ static safety_config landrover_init(uint16_t param) {
   landrover_rr2017 = (param == rr_param) || landrover_rr_mads;
   landrover_rr_acc_off_seen = false;
   landrover_rr_heartbeat_seen = false;
-  landrover_rr_gap_seen = false;
   landrover_rr_acc_fresh_seen = false;
   landrover_rr_acc_off = false;
   landrover_rr_cancel_armed = false;
@@ -576,7 +562,7 @@ static safety_config landrover_init(uint16_t param) {
   if (landrover_rr2017) {
     safety_config config = BUILD_SAFETY_CFG(landrover_rr_rx_checks, LANDROVER_TX_MSGS);
     if (!landrover_rr_mads) {
-      config.rx_checks_len -= 2;  // Gap and CANCEL belong to the RR MADS profile.
+      config.rx_checks_len -= 1;  // The final CANCEL check belongs to the RR MADS profile.
     }
     mads_set_alternative_experience(&alternative_experience);
     if (landrover_rr_mads) {

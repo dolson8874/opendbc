@@ -247,23 +247,22 @@ def test_mads_stale_cancel_input_disarms_even_with_other_inputs_fresh(rr):
 
 
 @pytest.mark.parametrize("rr", [True], indirect=True)
-def test_mads_stale_gap_disarms_even_with_fresh_camera(rr):
+def test_mads_engages_and_stays_active_without_gap_messages(rr):
   rx, _ = rr
-  rx(gap=0)
-  rx(gap=0)  # Confirm camera counter progression before the ACC edge.
-  rx(acc=True, gap=0)
-  assert tx(10)
-  for time_us in (100_000, 200_000, 300_000):
-    libsafety.set_timer(time_us)
-    rx()
-    assert tx(10)
-  libsafety.set_timer(400_001)
   rx()
-  assert not tx(10)
-  rx(gap=0)
-  assert not tx(10)
-  rx(acc=True, gap=0)
+  rx()  # Confirm camera counter progression before the ACC edge.
+  rx(acc=True)
   assert tx(10)
+  for time_us, gap in ((100_000, 0), (200_000, 2), (300_000, None), (400_001, None), (500_001, None), (600_001, None), (650_001, None)):
+    libsafety.set_timer(time_us)
+    libsafety.receive_rr2017_mads_heartbeat(True)
+    rx(gap=gap)
+    assert tx(10)
+  # The driver can still cancel MADS while the GAP message is absent.
+  libsafety.set_timer(720_001)
+  rx(cancel=True)
+  assert not tx(10)
+  assert tx(0)
 
 
 @pytest.mark.parametrize("rr", [True], indirect=True)
